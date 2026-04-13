@@ -1,6 +1,24 @@
--- Ожидание загрузки и базовые настройки
-repeat task.wait(0.5) until game:IsLoaded()
+local KeysURL = "https://raw.githubusercontent.com/IsameeQ/SameHub/main/keys.txt"
+local UserKey = _G.Key or ""
 
+local function VerifyAccess()
+    local s, result = pcall(function() return game:HttpGet(KeysURL) end)
+    if s and result then
+        for k in result:gmatch("[^%s]+") do
+            if UserKey == k then return true end
+        end
+    end
+    return false
+end
+
+if not VerifyAccess() then
+    game:GetService("Players").LocalPlayer:Kick("Access Denied")
+    return
+end
+
+repeat task.wait(0.1) until game:IsLoaded()
+
+-- Конфиг
 local BuyLucky = true
 local AutoSell = true
 local SellItems = {
@@ -12,7 +30,6 @@ local SellItems = {
     ["Steel Ball"] = true, ["Dio's Diary"] = true
 }
 
--- Лимиты инвентаря [cite: 17, 801]
 local MaxItemAmounts = {
     ["Gold Coin"] = 45, ["Rokakaka"] = 25, ["Pure Rokakaka"] = 10, ["Mysterious Arrow"] = 25,
     ["Diamond"] = 30, ["Ancient Scroll"] = 10, ["Caesar's Headband"] = 10, ["Stone Mask"] = 10,
@@ -26,28 +43,26 @@ local PlayerGui = Player:WaitForChild("PlayerGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MarketplaceService = game:GetService("MarketplaceService")
 
--- Проверка X2 инвентаря [cite: 17, 800]
-if MarketplaceService:UserOwnsGamePassAsync(Player.UserId, 14597778) then
-    for i, v in pairs(MaxItemAmounts) do MaxItemAmounts[i] = v * 2 end
-end
+-- Лимиты X2
+pcall(function()
+    if MarketplaceService:UserOwnsGamePassAsync(Player.UserId, 14597778) then
+        for i, v in pairs(MaxItemAmounts) do MaxItemAmounts[i] = v * 2 end
+    end
+end)
 
--- Полный скип GUI и авто-нажатие Play [cite: 596]
+-- Моментальный скип GUI
 task.spawn(function()
     pcall(function()
-        local loadingGuis = {"LoadingScreen", "LoadingScreen1", "TeleportGui", "IntroGui"}
-        for _, name in pairs(loadingGuis) do
-            local gui = PlayerGui:FindFirstChild(name)
-            if gui then gui:Destroy() end
-        end
+        local guis = {"LoadingScreen", "LoadingScreen1", "TeleportGui", "IntroGui"}
+        for _, n in pairs(guis) do if PlayerGui:FindFirstChild(n) then PlayerGui[n]:Destroy() end end
         local blur = game:GetService("Lighting"):FindFirstChildOfClass("BlurEffect")
         if blur then blur:Destroy() end
-        
-        local event = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Events"):FindFirstChild("RemoteEvent")
+        local event = ReplicatedStorage:FindFirstChild("RemoteEvent") or (ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("RemoteEvent"))
         if event then event:FireServer("PressedPlay") end
     end)
 end)
 
--- Анти-чит байпас [cite: 596]
+-- Анти-чит
 local oldNc
 oldNc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     local Args = {...}
@@ -57,40 +72,55 @@ oldNc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     return oldNc(self, ...)
 end))
 
--- Вспомогательные функции
 local function GetCharacter() return Player.Character or Player.CharacterAdded:Wait() end
 
-local function HasMaxItem(ItemName)
+local function HasMaxItem(name)
     local count = 0
-    for _, tool in pairs(Player.Backpack:GetChildren()) do
-        if tool.Name == ItemName then count = count + 1 end
-    end
-    if GetCharacter():FindFirstChild(ItemName) then count = count + 1 end
-    return count >= (MaxItemAmounts[ItemName] or 99)
+    for _, t in pairs(Player.Backpack:GetChildren()) do if t.Name == name then count = count + 1 end end
+    if GetCharacter():FindFirstChild(name) then count = count + 1 end
+    return count >= (MaxItemAmounts[name] or 99)
 end
 
--- Логика сбора и фарма [cite: 1, 783]
-local ItemSpawnFolder = workspace:WaitForChild("Item_Spawns", 20):WaitForChild("Items", 20)
+-- Загрузка ServerHop
 local ServerHop = loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))
 
+-- Ждем персонажа
+repeat task.wait(0.5) until GetCharacter():FindFirstChild("RemoteEvent")
+task.wait(1)
+
+-- Основной цикл
 while true do
-    local items = ItemSpawnFolder:GetChildren()
-    for _, item in pairs(items) do
-        if item:IsA("Model") and item.PrimaryPart then
-            local prompt = item:FindFirstChildOfClass("ProximityPrompt")
-            if prompt and not HasMaxItem(prompt.ObjectText) then
-                local char = GetCharacter()
-                if char and char:FindFirstChild("HumanoidRootPart") then
-                    char.HumanoidRootPart.CFrame = item.PrimaryPart.CFrame + Vector3.new(0, 5, 0)
-                    task.wait(0.3)
-                    fireproximityprompt(prompt)
-                    task.wait(0.2)
+    local ItemSpawnFolder = workspace:FindFirstChild("Item_Spawns") and workspace.Item_Spawns:FindFirstChild("Items")
+    local itemsFound = false
+
+    if ItemSpawnFolder then
+        local allItems = ItemSpawnFolder:GetChildren()
+        
+        for _, item in pairs(allItems) do
+            if item:IsA("Model") and item.PrimaryPart then
+                local prompt = item:FindFirstChildOfClass("ProximityPrompt")
+                local itemName = prompt and prompt.ObjectText or "Unknown"
+                
+                if not HasMaxItem(itemName) then
+                    itemsFound = true
+                    local hrp = GetCharacter():FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        local bv = Instance.new("BodyVelocity", hrp)
+                        bv.Velocity = Vector3.new(0,0,0)
+                        bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+                        
+                        hrp.CFrame = item.PrimaryPart.CFrame + Vector3.new(0, 5, 0)
+                        task.wait(0.3)
+                        fireproximityprompt(prompt)
+                        task.wait(0.2)
+                        bv:Destroy()
+                    end
                 end
             end
         end
     end
 
-    -- Продажа предметов торговцу [cite: 595, 637]
+    -- После сбора (или если их нет) — дополнительные действия
     if AutoSell then
         pcall(function()
             local remote = GetCharacter():FindFirstChild("RemoteEvent")
@@ -104,15 +134,13 @@ while true do
         end)
     end
 
-    -- Покупка Lucky Arrow [cite: 637]
     if BuyLucky and Player.PlayerStats.Money.Value >= 75000 then
         local remote = GetCharacter():FindFirstChild("RemoteEvent")
-        if remote then
-            remote:FireServer("PurchaseShopItem", {["ItemName"] = "1x Lucky Arrow"})
-        end
+        if remote then remote:FireServer("PurchaseShopItem", {["ItemName"] = "1x Lucky Arrow"}) end
     end
 
-    task.wait(2)
-    ServerHop()
-    task.wait(10)
+    -- СЕРВЕР ХОП: только если предметов больше нет
+    task.wait(0.5)
+    ServerHop() 
+    task.wait(2) -- Защита от бесконечного цикла, если хоп не сработал сразу
 end
