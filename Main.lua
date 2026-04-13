@@ -378,21 +378,6 @@ oldNc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     return oldNc(self, ...)
 end))
 
--- ========== ПАПКА ПРЕДМЕТОВ (ПОСТОЯННО ОБНОВЛЯЕМАЯ) ==========
-local function GetItemSpawnFolder()
-    local itemSpawns = workspace:FindFirstChild("Item_Spawns")
-    if itemSpawns then
-        return itemSpawns:FindFirstChild("Items")
-    end
-    return nil
-end
-
-local ItemSpawnFolder = GetItemSpawnFolder()
-if not ItemSpawnFolder then
-    task.wait(5)
-    ItemSpawnFolder = GetItemSpawnFolder()
-end
-
 -- ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 local function GetCharacter(Part)
     if Player.Character then
@@ -442,7 +427,7 @@ local function CountLuckyArrows()
     return count
 end
 
--- ========== СЕРВЕР-ХОП (НАДЁЖНЫЙ ПОТОК) ==========
+-- ========== СЕРВЕР-ХОП (НАДЁЖНЫЙ) ==========
 local function ServerHop()
     local servers = {}
     local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
@@ -459,14 +444,14 @@ local function ServerHop()
     end
 end
 
--- Постоянный мониторинг предметов на карте
+-- Мониторинг предметов (работает всегда, независимо от сервера)
 task.spawn(function()
     local noItemTimer = 0
     while true do
         task.wait(1)
-        local folder = GetItemSpawnFolder()
-        if folder then
-            local itemCount = #folder:GetChildren()
+        local itemsFolder = workspace:FindFirstChild("Item_Spawns") and workspace.Item_Spawns:FindFirstChild("Items")
+        if itemsFolder then
+            local itemCount = #itemsFolder:GetChildren()
             if itemCount == 0 then
                 noItemTimer = noItemTimer + 1
                 if noItemTimer >= 3 then
@@ -478,12 +463,21 @@ task.spawn(function()
                 end
             else
                 noItemTimer = 0
+                -- Если статус был "No items", возвращаем
+                if statusLabel.Text ~= "Status: Farming" then
+                    statusLabel.Text = "Status: Farming"
+                end
             end
         else
-            -- Если папка пропала, ждём 5 секунд и хоп
-            statusLabel.Text = "Status: Items folder lost, hopping"
-            ServerHop()
-            task.wait(10)
+            -- Если папка не найдена, ждём 3 секунды и хоп
+            noItemTimer = noItemTimer + 1
+            if noItemTimer >= 3 then
+                statusLabel.Text = "Status: Items folder missing, hopping"
+                ServerHop()
+                task.wait(10)
+                noItemTimer = 0
+                statusLabel.Text = "Status: Farming"
+            end
         end
     end
 end)
@@ -507,10 +501,11 @@ local function GetItemInfo(Model)
 end
 
 getgenv().SpawnedItems = {}
+
 local function RefreshItemList()
-    local folder = GetItemSpawnFolder()
-    if folder then
-        for _, model in pairs(folder:GetChildren()) do
+    local itemsFolder = workspace:FindFirstChild("Item_Spawns") and workspace.Item_Spawns:FindFirstChild("Items")
+    if itemsFolder then
+        for _, model in pairs(itemsFolder:GetChildren()) do
             if not getgenv().SpawnedItems[model] then
                 local info = GetItemInfo(model)
                 if info then
@@ -535,15 +530,23 @@ local function OnItemAdded(Model)
     end
 end
 
--- Наблюдаем за папкой (если она появится позже)
+-- Наблюдаем за папкой (с повторными попытками)
 task.spawn(function()
     while true do
-        local folder = GetItemSpawnFolder()
-        if folder then
-            folder.ChildAdded:Connect(OnItemAdded)
+        local itemsFolder = workspace:FindFirstChild("Item_Spawns") and workspace.Item_Spawns:FindFirstChild("Items")
+        if itemsFolder then
+            itemsFolder.ChildAdded:Connect(OnItemAdded)
             break
         end
         task.wait(2)
+    end
+end)
+
+-- Периодическое обновление списка
+task.spawn(function()
+    while true do
+        task.wait(10)
+        RefreshItemList()
     end
 end)
 
@@ -614,7 +617,7 @@ end)
 
 task.wait(5)
 
--- ========== ОСНОВНОЙ ЦИКЛ ФАРМА (БЕЗ ЛИМИТОВ) ==========
+-- ========== ОСНОВНОЙ ЦИКЛ ФАРМА ==========
 local function SellItemNow(itemName)
     if AutoSell and SellItems[itemName] then
         local tool = Player.Backpack:FindFirstChild(itemName)
@@ -640,16 +643,8 @@ Player.Backpack.ChildAdded:Connect(function(tool)
     end
 end)
 
--- Периодическое обновление списка предметов (на случай, если ChildAdded пропустил)
-task.spawn(function()
-    while true do
-        task.wait(10)
-        RefreshItemList()
-    end
-end)
-
 while true do
-    -- Собираем ВСЕ предметы, которые есть в списке (без проверки лимитов)
+    -- Собираем все предметы из списка
     for Index, ItemInfo in pairs(getgenv().SpawnedItems) do
         local HumanoidRootPart = GetCharacter("HumanoidRootPart")
         if HumanoidRootPart then
