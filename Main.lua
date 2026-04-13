@@ -13,6 +13,7 @@ local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
 local KEY_URL = "https://raw.githubusercontent.com/IsameeQ/SameHub/main/keys.txt"
+local RESET_LIST_URL = "https://raw.githubusercontent.com/IsameeQ/SameHub/main/reset_list.txt"
 local HWID_FILE = "SameHub_HWID.txt"
 
 local function GetHWID()
@@ -49,6 +50,17 @@ end
 if _G.SameHubReset then
     ResetHWID()
     _G.SameHubReset = nil
+end
+
+local function NeedReset(key)
+    local success, resetList = pcall(game.HttpGet, game, RESET_LIST_URL)
+    if not success then return false end
+    for line in resetList:gmatch("[^\r\n]+") do
+        if line == key then
+            return true
+        end
+    end
+    return false
 end
 
 local currentHWID = GetHWID()
@@ -97,6 +109,11 @@ elseif not savedHWID then
     if not isValid then
         Player:Kick("Invalid Key!")
         error("Invalid Key")
+    end
+    if NeedReset(inputKey) then
+        ResetHWID()
+        Player:Kick("HWID reset for this key. Restart the script.")
+        error("Reset")
     end
     SaveHWID(currentHWID)
 end
@@ -386,11 +403,8 @@ task.spawn(DestroyMapTextures)
 
 task.wait(5)
 
-local cyclesCompleted = 0
-local maxCycles = 1
-local maxCycleTime = 60
-local emptyCycles = 0
-local MAX_EMPTY_CYCLES = 3
+local lastItemTime = tick()
+local CHECK_NO_ITEMS_TIMEOUT = 20
 
 local function SellItemNow(itemName)
     if AutoSell and SellItems[itemName] then
@@ -420,8 +434,7 @@ end)
 while true do
     if ShouldStopFarming() then
         repeat task.wait(5) until not ShouldStopFarming()
-        cyclesCompleted = 0
-        emptyCycles = 0
+        lastItemTime = tick()
     end
 
     local itemsCollected = 0
@@ -430,6 +443,7 @@ while true do
         if HumanoidRootPart then
             if not HasMaxItem(ItemInfo.Name) then
                 itemsCollected = itemsCollected + 1
+                lastItemTime = tick()
                 local ProximityPrompt = ItemInfo.ProximityPrompt
                 local Position = ItemInfo.Position
                 getgenv().SpawnedItems[Index] = nil
@@ -453,19 +467,11 @@ while true do
 
     task.wait(3)
 
-    if itemsCollected == 0 then
-        emptyCycles = emptyCycles + 1
-    else
-        emptyCycles = 0
-    end
-
-    if emptyCycles >= MAX_EMPTY_CYCLES then
-        emptyCycles = 0
+    if tick() - lastItemTime > CHECK_NO_ITEMS_TIMEOUT then
         ServerHop()
         task.wait(10)
+        lastItemTime = tick()
     end
-
-    local cycleStartTime = tick()
 
     if AutoSell then
         for Item, Sell in pairs(SellItems) do
@@ -490,30 +496,6 @@ while true do
             purchaseAttempts = purchaseAttempts + 1
             if CountLuckyArrows() >= 10 then break end
             if purchaseAttempts > 3 and CountLuckyArrows() == 9 then break end
-        end
-    end
-
-    cyclesCompleted = cyclesCompleted + 1
-
-    if tick() - cycleStartTime > maxCycleTime then
-        cyclesCompleted = 0
-        ServerHop()
-        task.wait(10)
-    end
-
-    if cyclesCompleted >= maxCycles then
-        if ShouldStopFarming() then
-            cyclesCompleted = 0
-        else
-            cyclesCompleted = 0
-            local hopStartTime = tick()
-            ServerHop()
-            task.wait(10)
-            if tick() - hopStartTime < 15 then
-                task.wait(5)
-                ServerHop()
-                task.wait(10)
-            end
         end
     end
 
