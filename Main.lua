@@ -202,7 +202,7 @@ local SellItems = {
     ["Steel Ball"] = true, ["Dio's Diary"] = true
 }
 
--- ========== GUI (с перетаскиванием и отображением дней подписки) ==========
+-- ========== GUI (перетаскиваемое, с днями подписки) ==========
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SameHub"
 screenGui.Parent = CoreGui
@@ -464,7 +464,7 @@ local function CountLuckyArrows()
     return count
 end
 
--- ========== СЕРВЕР-ХОП (10 СЕКУНД БЕЗ ПРЕДМЕТОВ) ==========
+-- ========== СЕРВЕР-ХОП (3 СЕКУНДЫ БЕЗ ПРЕДМЕТОВ НА КАРТЕ) ==========
 local function ServerHop()
     local servers = {}
     local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
@@ -481,11 +481,11 @@ local function ServerHop()
     end
 end
 
--- Отдельный поток: проверка каждые 2 секунды, если 10 секунд нет предметов — хоп
+-- Отдельный поток: проверка каждую секунду, если 3 секунды нет предметов — хоп
 task.spawn(function()
     local timeWithNoItems = 0
-    local checkInterval = 2
-    local maxEmptyTime = 10
+    local checkInterval = 1
+    local maxEmptyTime = 3
     while true do
         task.wait(checkInterval)
         if ItemSpawnFolder then
