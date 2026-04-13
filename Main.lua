@@ -13,7 +13,51 @@ local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
 local KEY_URL = "https://raw.githubusercontent.com/IsameeQ/SameHub/main/keys.txt"
-local function CheckKey()
+local HWID_FILE = "SameHub_HWID.txt"
+
+local function GetHWID()
+    local executor = identifyexecutor and identifyexecutor() or "Unknown"
+    local userId = Player.UserId
+    local hwid_raw = ""
+    if syn and syn.crypt and syn.crypt.custom then
+        hwid_raw = syn.crypt.custom() or ""
+    elseif gethwid then
+        hwid_raw = gethwid() or ""
+    elseif syn and syn.get_hwid then
+        hwid_raw = syn.get_hwid() or ""
+    end
+    return string.format("%s|%s|%s", executor, userId, hwid_raw)
+end
+
+local function SaveHWID(hwid)
+    writefile(HWID_FILE, hwid)
+end
+
+local function LoadHWID()
+    if isfile(HWID_FILE) then
+        return readfile(HWID_FILE)
+    end
+    return nil
+end
+
+local function ResetHWID()
+    if isfile(HWID_FILE) then
+        delfile(HWID_FILE)
+    end
+end
+
+if _G.SameHubReset then
+    ResetHWID()
+    _G.SameHubReset = nil
+end
+
+local currentHWID = GetHWID()
+local savedHWID = LoadHWID()
+
+if savedHWID and savedHWID ~= currentHWID then
+    Player:Kick("HWID mismatch!")
+    error("HWID mismatch")
+elseif not savedHWID then
     local inputKey = ""
     local dialog = Instance.new("ScreenGui")
     local frame = Instance.new("Frame")
@@ -28,12 +72,12 @@ local function CheckKey()
     frame.Parent = dialog
     textBox.Size = UDim2.new(0.8, 0, 0, 40)
     textBox.Position = UDim2.new(0.1, 0, 0.2, 0)
-    textBox.PlaceholderText = "Введите ключ"
+    textBox.PlaceholderText = "Enter Key"
     textBox.Text = ""
     textBox.Parent = frame
     button.Size = UDim2.new(0.4, 0, 0, 40)
     button.Position = UDim2.new(0.3, 0, 0.6, 0)
-    button.Text = "Войти"
+    button.Text = "Activate"
     button.Parent = frame
     local submitted = false
     button.MouseButton1Click:Connect(function()
@@ -51,11 +95,11 @@ local function CheckKey()
         end
     end
     if not isValid then
-        Player:Kick("Неверный ключ доступа")
-        error("Неверный ключ")
+        Player:Kick("Invalid Key!")
+        error("Invalid Key")
     end
+    SaveHWID(currentHWID)
 end
-CheckKey()
 
 local BuyLucky = true
 local AutoSell = true
