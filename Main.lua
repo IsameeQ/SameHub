@@ -43,17 +43,36 @@ local function GetHWID()
     return string.format("%s|%s|%s", executor, userId, hwid_raw)
 end
 
-local function SaveHWID(hwid) writefile(HWID_FILE, hwid) end
-local function LoadHWID() return isfile(HWID_FILE) and readfile(HWID_FILE) or nil end
-local function ResetHWID() if isfile(HWID_FILE) then delfile(HWID_FILE) end end
+local function SaveHWID(hwid)
+    writefile(HWID_FILE, hwid)
+end
+
+local function LoadHWID()
+    if isfile(HWID_FILE) then
+        return readfile(HWID_FILE)
+    end
+    return nil
+end
+
+local function ResetHWID()
+    if isfile(HWID_FILE) then delfile(HWID_FILE) end
+end
+
 local function CanResetHWID()
     if not isfile(RESET_LOG_FILE) then return true end
     local lastReset = tonumber(readfile(RESET_LOG_FILE))
     if not lastReset then return true end
     return (os.time() - lastReset) >= 86400
 end
-local function LogReset() writefile(RESET_LOG_FILE, tostring(os.time())) end
-local function SaveKeyInfo(key) writefile(KEY_INFO_FILE, HttpService:JSONEncode({ key = key, activated = os.time() })) end
+
+local function LogReset()
+    writefile(RESET_LOG_FILE, tostring(os.time()))
+end
+
+local function SaveKeyInfo(key)
+    writefile(KEY_INFO_FILE, HttpService:JSONEncode({ key = key, activated = os.time() }))
+end
+
 local function LoadKeyInfo()
     if isfile(KEY_INFO_FILE) then
         local success, data = pcall(HttpService.JSONDecode, HttpService, readfile(KEY_INFO_FILE))
@@ -61,6 +80,7 @@ local function LoadKeyInfo()
     end
     return nil
 end
+
 local function GetDaysLeft()
     local info = LoadKeyInfo()
     if not info then return 0 end
@@ -68,12 +88,16 @@ local function GetDaysLeft()
     local left = 30 - daysPassed
     return left > 0 and math.floor(left) or 0
 end
+
 local function IsKeyValid()
     local info = LoadKeyInfo()
     if not info then return false end
     return (os.time() - info.activated) <= 30 * 86400
 end
-local function ClearKeyInfo() if isfile(KEY_INFO_FILE) then delfile(KEY_INFO_FILE) end end
+
+local function ClearKeyInfo()
+    if isfile(KEY_INFO_FILE) then delfile(KEY_INFO_FILE) end
+end
 
 local function CheckKey()
     local inputKey = ""
@@ -89,7 +113,8 @@ local function CheckKey()
     frame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
     frame.BorderSizePixel = 0
     frame.Parent = dialog
-    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+    local corner = Instance.new("UICorner", frame)
+    corner.CornerRadius = UDim.new(0, 8)
     title.Size = UDim2.new(1, 0, 0, 35)
     title.Position = UDim2.new(0, 0, 0, 0)
     title.BackgroundTransparency = 1
@@ -125,15 +150,24 @@ local function CheckKey()
     local keyList = nil
     for attempt = 1, 5 do
         local success, res = pcall(game.HttpGet, game, KEY_URL)
-        if success then keyList = res break end
+        if success then
+            keyList = res
+            break
+        end
         task.wait(2)
     end
-    if not keyList then Player:Kick("Failed to load keys") return end
+    if not keyList then
+        Player:Kick("Failed to load keys")
+        return
+    end
     local isValid = false
     for line in keyList:gmatch("[^\r\n]+") do
-        if line == inputKey then isValid = true break end
+        if line == inputKey then isValid = true; break end
     end
-    if not isValid then Player:Kick("Invalid Key!") return end
+    if not isValid then
+        Player:Kick("Invalid Key!")
+        return
+    end
     SaveKeyInfo(inputKey)
 end
 
@@ -144,7 +178,9 @@ if savedHWID and savedHWID ~= currentHWID then
     Player:Kick("HWID mismatch!")
 elseif not savedHWID then
     CheckKey()
-    if not IsKeyValid() then Player:Kick("Key expired (30 days). Purchase a new key.") end
+    if not IsKeyValid() then
+        Player:Kick("Key expired (30 days). Purchase a new key.")
+    end
     SaveHWID(currentHWID)
 else
     if not IsKeyValid() then
@@ -179,7 +215,8 @@ mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 mainFrame.BackgroundTransparency = 0.05
 mainFrame.BorderSizePixel = 0
 mainFrame.Parent = screenGui
-Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 8)
+local corner = Instance.new("UICorner", mainFrame)
+corner.CornerRadius = UDim.new(0, 8)
 
 local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, 0, 0, 35)
@@ -193,17 +230,22 @@ titleLabel.Parent = mainFrame
 
 -- Перетаскивание окна
 local dragging = false
-local dragStart, frameStart
+local dragStart
+local frameStart
+
 titleLabel.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         dragging = true
         dragStart = input.Position
         frameStart = mainFrame.Position
         input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
         end)
     end
 end)
+
 UserInputService.InputChanged:Connect(function(input)
     if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
         local delta = input.Position - dragStart
@@ -287,7 +329,12 @@ local function UpdateGUI()
         daysLabel.Text = "Days left: " .. GetDaysLeft()
     end)
 end
-task.spawn(function() while true do UpdateGUI() task.wait(2) end end)
+task.spawn(function()
+    while true do
+        UpdateGUI()
+        task.wait(2)
+    end
+end)
 
 -- ========== БАЙПАСЫ ==========
 pcall(function()
@@ -334,7 +381,9 @@ end))
 
 -- ========== ПАПКА ПРЕДМЕТОВ ==========
 local ItemSpawnFolder = workspace:FindFirstChild("Item_Spawns")
-if ItemSpawnFolder then ItemSpawnFolder = ItemSpawnFolder:FindFirstChild("Items") end
+if ItemSpawnFolder then
+    ItemSpawnFolder = ItemSpawnFolder:FindFirstChild("Items")
+end
 if not ItemSpawnFolder then
     task.wait(5)
     ItemSpawnFolder = workspace:FindFirstChild("Item_Spawns")
@@ -419,80 +468,89 @@ end
 local ServerHop
 local hopInProgress = false
 
-do
-    local success, externalHop = pcall(function()
-        return loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))()
-    end)
+-- Пытаемся загрузить внешний проверенный скрипт
+local success, externalHop = pcall(function()
+    return loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))()
+end)
 
-    if success and type(externalHop) == "function" then
-        ServerHop = externalHop
-        print("✅ ServerHop loaded from external source")
-    else
-        warn("⚠️ External ServerHop failed, using fallback")
-        function ServerHop()
-            if hopInProgress then return end
-            hopInProgress = true
-            print("🔄 Fallback ServerHop triggered")
-            local HttpService = game:GetService("HttpService")
-            local TeleportService = game:GetService("TeleportService")
-            local Api = "https://games.roblox.com/v1/games/"
-            local placeId, jobId = game.PlaceId, game.JobId
-            local serversUrl = Api .. placeId .. "/servers/Public?sortOrder=Desc&limit=100"
+if success and type(externalHop) == "function" then
+    ServerHop = function()
+        if hopInProgress then return end
+        hopInProgress = true
+        statusLabel.Text = "Status: Hopping (external)"
+        externalHop()
+        -- После успешного хопа скрипт перезапустится в новом сервере
+    end
+    print("✅ ServerHop loaded from external source")
+else
+    warn("⚠️ External ServerHop failed, using fallback")
+    function ServerHop()
+        if hopInProgress then return end
+        hopInProgress = true
+        statusLabel.Text = "Status: Hopping (fallback)"
+        print("🔄 Fallback ServerHop triggered")
+        
+        local HttpService = game:GetService("HttpService")
+        local TeleportService = game:GetService("TeleportService")
+        local Api = "https://games.roblox.com/v1/games/"
+        local placeId, jobId = game.PlaceId, game.JobId
+        local serversUrl = Api .. placeId .. "/servers/Public?sortOrder=Desc&limit=100"
 
-            local function listServers(cursor)
-                local url = serversUrl .. ((cursor and "&cursor=" .. cursor) or "")
-                local success, raw = pcall(game.HttpGet, game, url)
-                if not success then return nil end
-                local success2, data = pcall(HttpService.JSONDecode, HttpService, raw)
-                if not success2 then return nil end
-                return data
-            end
+        local function listServers(cursor)
+            local url = serversUrl .. ((cursor and "&cursor=" .. cursor) or "")
+            local success, raw = pcall(game.HttpGet, game, url)
+            if not success then return nil end
+            local success2, data = pcall(HttpService.JSONDecode, HttpService, raw)
+            if not success2 then return nil end
+            return data
+        end
 
-            local nextCursor
-            local found = false
-            repeat
-                local servers = listServers(nextCursor)
-                if not servers or not servers.data then break end
-                for _, server in ipairs(servers.data) do
-                    if server.playing < server.maxPlayers and server.id ~= jobId then
-                        local s, err = pcall(TeleportService.TeleportToPlaceInstance, TeleportService, placeId, server.id, Player)
-                        if s then
-                            found = true
-                            break
-                        end
+        local nextCursor
+        local found = false
+        repeat
+            local servers = listServers(nextCursor)
+            if not servers or not servers.data then break end
+            for _, server in ipairs(servers.data) do
+                if server.playing < server.maxPlayers and server.id ~= jobId then
+                    local s, err = pcall(TeleportService.TeleportToPlaceInstance, TeleportService, placeId, server.id, Player)
+                    if s then
+                        found = true
+                        break
                     end
                 end
-                if found then break end
-                nextCursor = servers.nextPageCursor
-            until not nextCursor
-
-            if not found then
-                warn("❌ No servers found, force teleport")
-                TeleportService:Teleport(placeId, Player)
             end
-            hopInProgress = false
+            if found then break end
+            nextCursor = servers.nextPageCursor
+        until not nextCursor
+
+        if not found then
+            warn("❌ No servers found, force teleport")
+            TeleportService:Teleport(placeId, Player)
         end
+        hopInProgress = false
     end
 end
 
--- ========== ПОТОК ПРОВЕРКИ НА ПУСТУЮ КАРТУ ==========
+-- Отдельный поток: проверка каждую секунду, если 3 секунды нет предметов — хоп
 task.spawn(function()
-    local emptyTime = 0
+    local timeWithNoItems = 0
     local checkInterval = 1
-    local maxEmpty = 3
+    local maxEmptyTime = 3
     while true do
         task.wait(checkInterval)
         if ItemSpawnFolder then
-            local count = #ItemSpawnFolder:GetChildren()
-            if count == 0 then
-                emptyTime = emptyTime + checkInterval
+            local currentItems = #ItemSpawnFolder:GetChildren()
+            if currentItems == 0 then
+                timeWithNoItems = timeWithNoItems + checkInterval
             else
-                emptyTime = 0
+                timeWithNoItems = 0
             end
-            if emptyTime >= maxEmpty and not hopInProgress then
+            if timeWithNoItems >= maxEmptyTime and not hopInProgress then
                 statusLabel.Text = "Status: No items, hopping"
-                pcall(ServerHop)
-                emptyTime = 0
+                ServerHop()
+                task.wait(10)
+                timeWithNoItems = 0
+                hopInProgress = false
                 statusLabel.Text = "Status: Farming"
             end
         end
@@ -547,7 +605,12 @@ task.spawn(function()
                 local screen = PlayerGui:FindFirstChild(name)
                 if screen then screen:Destroy() end
             end
-            if workspace:FindFirstChild("LoadingScreen") then workspace.LoadingScreen:Destroy() end
+            if workspace:FindFirstChild("LoadingScreen") then
+                workspace.LoadingScreen:Destroy()
+            end
+            if workspace:FindFirstChild("LoadingScreen") and workspace.LoadingScreen:FindFirstChild("Song") then
+                workspace.LoadingScreen.Song:Destroy()
+            end
         end)
     end
 end)
@@ -594,9 +657,34 @@ end)
 
 task.wait(5)
 
--- ========== ОСНОВНОЙ ЦИКЛ ФАРМА ==========
+-- ========== ОСНОВНОЙ ЦИКЛ ФАРМА (БЕЗ ОСТАНОВКИ) ==========
+local function SellItemNow(itemName)
+    if AutoSell and SellItems[itemName] then
+        local tool = Player.Backpack:FindFirstChild(itemName)
+        if tool then
+            pcall(function()
+                GetCharacter("Humanoid"):EquipTool(tool)
+                task.wait(0.05)
+                GetCharacter("RemoteEvent"):FireServer("EndDialogue", {
+                    NPC = "Merchant",
+                    Dialogue = "Dialogue5",
+                    Option = "Option2"
+                })
+                task.wait(0.05)
+            end)
+        end
+    end
+end
+
+Player.Backpack.ChildAdded:Connect(function(tool)
+    task.wait(0.1)
+    if tool:IsA("Tool") and SellItems[tool.Name] then
+        SellItemNow(tool.Name)
+    end
+end)
+
 while true do
-    -- Сбор предметов
+    -- Собираем предметы
     for Index, ItemInfo in pairs(getgenv().SpawnedItems) do
         local HumanoidRootPart = GetCharacter("HumanoidRootPart")
         if HumanoidRootPart then
@@ -624,7 +712,7 @@ while true do
 
     task.wait(3)
 
-    -- Автоселл
+    -- Автоселл оставшихся предметов
     if AutoSell then
         for Item, Sell in pairs(SellItems) do
             if Sell and Player.Backpack and Player.Backpack:FindFirstChild(Item) then
