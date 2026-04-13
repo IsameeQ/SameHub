@@ -26,7 +26,6 @@ end
 local KEY_URL = "https://raw.githubusercontent.com/IsameeQ/SameHub/main/keys.txt"
 local HWID_FILE = "SameHub_HWID.txt"
 local KEY_INFO_FILE = "SameHub_KeyInfo.txt"
-local RESET_LOG_FILE = "SameHub_ResetLog.txt"
 
 -- ========== HWID ==========
 local function GetHWID()
@@ -58,18 +57,6 @@ local function ResetHWID()
     if isfile(HWID_FILE) then
         delfile(HWID_FILE)
     end
-end
-
--- ========== СБРОС HWID (1 раз в 24 часа) ==========
-local function CanResetHWID()
-    if not isfile(RESET_LOG_FILE) then return true end
-    local lastReset = tonumber(readfile(RESET_LOG_FILE))
-    if not lastReset then return true end
-    return (os.time() - lastReset) >= 86400
-end
-
-local function LogReset()
-    writefile(RESET_LOG_FILE, tostring(os.time()))
 end
 
 -- ========== КЛЮЧ + СРОК ДЕЙСТВИЯ 30 ДНЕЙ ==========
@@ -286,15 +273,8 @@ resetButton.Font = Enum.Font.GothamBold
 resetButton.TextSize = 13
 resetButton.Parent = mainFrame
 resetButton.MouseButton1Click:Connect(function()
-    if not CanResetHWID() then
-        statusLabel.Text = "Status: Reset only once per 24h"
-        task.wait(2)
-        statusLabel.Text = "Status: Farming"
-        return
-    end
     ResetHWID()
     ClearKeyInfo()
-    LogReset()
     Player:Kick("HWID reset. Restart script with a key.")
 end)
 
@@ -458,7 +438,7 @@ local function ShouldStopFarming()
     return false
 end
 
--- ========== СЕРВЕР-ХОП ==========
+-- ========== СЕРВЕР-ХОП (ПЕРЕДЕЛАН) ==========
 local function ServerHop()
     local servers = {}
     local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
@@ -474,6 +454,33 @@ local function ServerHop()
         loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))()
     end
 end
+
+-- Отдельный поток для проверки предметов на карте
+task.spawn(function()
+    local lastItemCount = 0
+    local timeWithNoItems = 0
+    local checkInterval = 5      -- проверяем каждые 5 секунд
+    local maxEmptyTime = 20      -- если 20 секунд нет предметов — хоп
+
+    while true do
+        task.wait(checkInterval)
+        if not ItemSpawnFolder then continue end
+        local currentItems = #ItemSpawnFolder:GetChildren()
+        if currentItems == 0 then
+            timeWithNoItems = timeWithNoItems + checkInterval
+        else
+            timeWithNoItems = 0
+            lastItemCount = currentItems
+        end
+        if timeWithNoItems >= maxEmptyTime then
+            statusLabel.Text = "Status: No items on map, hopping"
+            ServerHop()
+            task.wait(10)
+            timeWithNoItems = 0
+            statusLabel.Text = "Status: Farming"
+        end
+    end
+end)
 
 -- ========== ОБНАРУЖЕНИЕ ПРЕДМЕТОВ ==========
 local function GetItemInfo(Model)
@@ -495,14 +502,12 @@ end
 
 getgenv().SpawnedItems = {}
 if ItemSpawnFolder then
-    -- сканируем уже существующие предметы
     for _, model in pairs(ItemSpawnFolder:GetChildren()) do
         local info = GetItemInfo(model)
         if info then
             getgenv().SpawnedItems[model] = info
         end
     end
-    -- отслеживаем новые
     ItemSpawnFolder.ChildAdded:Connect(function(Model)
         task.wait(1)
         if Model:IsA("Model") then
@@ -582,8 +587,7 @@ end)
 task.wait(5)
 
 -- ========== ОСНОВНОЙ ЦИКЛ ФАРМА ==========
-local lastItemTime = tick()
-local NO_ITEMS_TIMEOUT = 20
+local lastPickupTime = tick()
 local cycleStartTime = tick()
 local maxCycleTime = 60
 
@@ -617,7 +621,7 @@ while true do
         statusLabel.Text = "Status: Waiting (max)"
         repeat task.wait(5) until not ShouldStopFarming()
         statusLabel.Text = "Status: Farming"
-        lastItemTime = tick()
+        lastPickupTime = tick()
         cycleStartTime = tick()
     end
 
@@ -627,7 +631,7 @@ while true do
         if HumanoidRootPart then
             if not HasMaxItem(ItemInfo.Name) then
                 collected = true
-                lastItemTime = tick()
+                lastPickupTime = tick()
                 local ProximityPrompt = ItemInfo.ProximityPrompt
                 local Position = ItemInfo.Position
                 getgenv().SpawnedItems[Index] = nil
@@ -651,17 +655,27 @@ while true do
 
     task.wait(3)
 
-    -- ХОП если 20 секунд нет предметов ИЛИ цикл длится > 60 секунд
-    if (tick() - lastItemTime > NO_ITEMS_TIMEOUT) or (tick() - cycleStartTime > maxCycleTime) then
-        statusLabel.Text = "Status: No items, hopping"
+    -- Дополнительная проверка: если долго не было подбора — хоп
+    if tick() - lastPickupTime > 25 then
+        statusLabel.Text = "Status: No pickup in 25s, hopping"
         ServerHop()
         task.wait(10)
-        lastItemTime = tick()
+        lastPickupTime = tick()
         cycleStartTime = tick()
         statusLabel.Text = "Status: Farming"
     end
 
-    -- Автоселл оставшихся предметов (если что-то не продалось через ChildAdded)
+    -- Таймаут цикла (если цикл завис)
+    if tick() - cycleStartTime > maxCycleTime then
+        statusLabel.Text = "Status: Cycle timeout, hopping"
+        ServerHop()
+        task.wait(10)
+        lastPickupTime = tick()
+        cycleStartTime = tick()
+        statusLabel.Text = "Status: Farming"
+    end
+
+    -- Автоселл оставшихся предметов
     if AutoSell then
         for Item, Sell in pairs(SellItems) do
             if Sell and Player.Backpack and Player.Backpack:FindFirstChild(Item) then
