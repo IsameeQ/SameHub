@@ -12,6 +12,16 @@ local CoreGui = game:GetService("CoreGui")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
+-- ========== СОЗДАНИЕ ПАПОК ДЛЯ ПРЕДМЕТОВ (если их нет) ==========
+if not workspace:FindFirstChild("Item_Spawns") then
+    local folder = Instance.new("Folder", workspace)
+    folder.Name = "Item_Spawns"
+end
+if not workspace.Item_Spawns:FindFirstChild("Items") then
+    local folder = Instance.new("Folder", workspace.Item_Spawns)
+    folder.Name = "Items"
+end
+
 -- ========== КОНФИГУРАЦИЯ ==========
 local KEY_URL = "https://raw.githubusercontent.com/IsameeQ/SameHub/main/keys.txt"
 local HWID_FILE = "SameHub_HWID.txt"
@@ -207,7 +217,7 @@ local SellItems = {
     ["Dio's Diary"] = true
 }
 
--- ========== GUI (простой, человеческий) ==========
+-- ========== GUI ==========
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SameHub"
 screenGui.Parent = CoreGui
@@ -351,13 +361,13 @@ oldNc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
 end))
 
 -- ========== ПАПКА ПРЕДМЕТОВ ==========
-local ItemSpawnFolder
-pcall(function()
-    ItemSpawnFolder = Workspace:WaitForChild("Item_Spawns", 10):WaitForChild("Items", 10)
-end)
+local ItemSpawnFolder = workspace:FindFirstChild("Item_Spawns")
+if ItemSpawnFolder then
+    ItemSpawnFolder = ItemSpawnFolder:FindFirstChild("Items")
+end
 if not ItemSpawnFolder then
     task.wait(5)
-    ItemSpawnFolder = Workspace:FindFirstChild("Item_Spawns")
+    ItemSpawnFolder = workspace:FindFirstChild("Item_Spawns")
     if ItemSpawnFolder then ItemSpawnFolder = ItemSpawnFolder:FindFirstChild("Items") end
 end
 
@@ -448,7 +458,7 @@ local function ShouldStopFarming()
     return false
 end
 
--- ========== СЕРВЕР-ХОП (рабочий) ==========
+-- ========== СЕРВЕР-ХОП ==========
 local function ServerHop()
     local servers = {}
     local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
@@ -485,6 +495,14 @@ end
 
 getgenv().SpawnedItems = {}
 if ItemSpawnFolder then
+    -- сканируем уже существующие предметы
+    for _, model in pairs(ItemSpawnFolder:GetChildren()) do
+        local info = GetItemInfo(model)
+        if info then
+            getgenv().SpawnedItems[model] = info
+        end
+    end
+    -- отслеживаем новые
     ItemSpawnFolder.ChildAdded:Connect(function(Model)
         task.wait(1)
         if Model:IsA("Model") then
@@ -563,7 +581,7 @@ end)
 
 task.wait(5)
 
--- ========== ОСНОВНОЙ ЦИКЛ С ТАЙМЕРОМ ХОПА ==========
+-- ========== ОСНОВНОЙ ЦИКЛ ФАРМА ==========
 local lastItemTime = tick()
 local NO_ITEMS_TIMEOUT = 20
 local cycleStartTime = tick()
@@ -633,7 +651,7 @@ while true do
 
     task.wait(3)
 
-    -- ХОП если 20 секунд нет предметов ИЛИ если цикл длится больше 60 секунд
+    -- ХОП если 20 секунд нет предметов ИЛИ цикл длится > 60 секунд
     if (tick() - lastItemTime > NO_ITEMS_TIMEOUT) or (tick() - cycleStartTime > maxCycleTime) then
         statusLabel.Text = "Status: No items, hopping"
         ServerHop()
@@ -643,7 +661,7 @@ while true do
         statusLabel.Text = "Status: Farming"
     end
 
-    -- Автоселл (оставшиеся)
+    -- Автоселл оставшихся предметов (если что-то не продалось через ChildAdded)
     if AutoSell then
         for Item, Sell in pairs(SellItems) do
             if Sell and Player.Backpack and Player.Backpack:FindFirstChild(Item) then
