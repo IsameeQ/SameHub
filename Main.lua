@@ -12,7 +12,7 @@ local CoreGui = game:GetService("CoreGui")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
--- ========== СОЗДАНИЕ ПАПОК ДЛЯ ПРЕДМЕТОВ (если их нет) ==========
+-- ========== СОЗДАНИЕ ПАПОК ДЛЯ ПРЕДМЕТОВ ==========
 if not workspace:FindFirstChild("Item_Spawns") then
     local folder = Instance.new("Folder", workspace)
     folder.Name = "Item_Spawns"
@@ -26,6 +26,7 @@ end
 local KEY_URL = "https://raw.githubusercontent.com/IsameeQ/SameHub/main/keys.txt"
 local HWID_FILE = "SameHub_HWID.txt"
 local KEY_INFO_FILE = "SameHub_KeyInfo.txt"
+local RESET_LOG_FILE = "SameHub_ResetLog.txt"
 
 -- ========== HWID ==========
 local function GetHWID()
@@ -57,6 +58,18 @@ local function ResetHWID()
     if isfile(HWID_FILE) then
         delfile(HWID_FILE)
     end
+end
+
+-- ========== СБРОС HWID (1 раз в 24 часа) ==========
+local function CanResetHWID()
+    if not isfile(RESET_LOG_FILE) then return true end
+    local lastReset = tonumber(readfile(RESET_LOG_FILE))
+    if not lastReset then return true end
+    return (os.time() - lastReset) >= 86400
+end
+
+local function LogReset()
+    writefile(RESET_LOG_FILE, tostring(os.time()))
 end
 
 -- ========== КЛЮЧ + СРОК ДЕЙСТВИЯ 30 ДНЕЙ ==========
@@ -273,8 +286,15 @@ resetButton.Font = Enum.Font.GothamBold
 resetButton.TextSize = 13
 resetButton.Parent = mainFrame
 resetButton.MouseButton1Click:Connect(function()
+    if not CanResetHWID() then
+        statusLabel.Text = "Status: Reset only once per 24h"
+        task.wait(2)
+        statusLabel.Text = "Status: Farming"
+        return
+    end
     ResetHWID()
     ClearKeyInfo()
+    LogReset()
     Player:Kick("HWID reset. Restart script with a key.")
 end)
 
@@ -438,49 +458,46 @@ local function ShouldStopFarming()
     return false
 end
 
--- ========== СЕРВЕР-ХОП (ПЕРЕДЕЛАН) ==========
+-- ========== ПОФИКШЕННЫЙ СЕРВЕР-ХОП (API ROBLOX + FALLBACK) ==========
 local function ServerHop()
-    local servers = {}
-    local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
-    local data = HttpService:JSONDecode(res)
-    for _, v in pairs(data.data) do
-        if v.playing < v.maxPlayers and v.id ~= game.JobId then
-            table.insert(servers, v.id)
+    statusLabel.Text = "Status: Searching Server..."
+    local PlaceId = game.PlaceId
+    local JobId = game.JobId
+
+    local success, result = pcall(function()
+        -- Запрос списка серверов через API
+        local url = string.format("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100", PlaceId)
+        return game:HttpGet(url)
+    end)
+
+    if success then
+        local data = HttpService:JSONDecode(result)
+        if data and data.data then
+            local possibleServers = {}
+            for _, server in pairs(data.data) do
+                if type(server) == "table" and server.playing and server.maxPlayers then
+                    -- Проверяем наличие мест и чтобы сервер не был текущим
+                    if server.playing < server.maxPlayers and server.id ~= JobId then
+                        table.insert(possibleServers, server.id)
+                    end
+                end
+            end
+
+            if #possibleServers > 0 then
+                statusLabel.Text = "Status: Hopping!"
+                TeleportService:TeleportToPlaceInstance(PlaceId, possibleServers[math.random(1, #possibleServers)], Player)
+            else
+                -- Если серверов нет, используем лоадстринг-запас
+                statusLabel.Text = "Status: Hop Fallback..."
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))()
+            end
         end
-    end
-    if #servers > 0 then
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)])
     else
+        -- Запасной вариант при ошибке API
+        statusLabel.Text = "Status: Error, using Fallback"
         loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))()
     end
 end
-
--- Отдельный поток для проверки предметов на карте
-task.spawn(function()
-    local lastItemCount = 0
-    local timeWithNoItems = 0
-    local checkInterval = 5      -- проверяем каждые 5 секунд
-    local maxEmptyTime = 20      -- если 20 секунд нет предметов — хоп
-
-    while true do
-        task.wait(checkInterval)
-        if not ItemSpawnFolder then continue end
-        local currentItems = #ItemSpawnFolder:GetChildren()
-        if currentItems == 0 then
-            timeWithNoItems = timeWithNoItems + checkInterval
-        else
-            timeWithNoItems = 0
-            lastItemCount = currentItems
-        end
-        if timeWithNoItems >= maxEmptyTime then
-            statusLabel.Text = "Status: No items on map, hopping"
-            ServerHop()
-            task.wait(10)
-            timeWithNoItems = 0
-            statusLabel.Text = "Status: Farming"
-        end
-    end
-end)
 
 -- ========== ОБНАРУЖЕНИЕ ПРЕДМЕТОВ ==========
 local function GetItemInfo(Model)
@@ -537,9 +554,6 @@ task.spawn(function()
             if workspace:FindFirstChild("LoadingScreen") then
                 workspace.LoadingScreen:Destroy()
             end
-            if workspace:FindFirstChild("LoadingScreen") and workspace.LoadingScreen:FindFirstChild("Song") then
-                workspace.LoadingScreen.Song:Destroy()
-            end
         end)
     end
 end)
@@ -587,7 +601,8 @@ end)
 task.wait(5)
 
 -- ========== ОСНОВНОЙ ЦИКЛ ФАРМА ==========
-local lastPickupTime = tick()
+local lastItemTime = tick()
+local NO_ITEMS_TIMEOUT = 20
 local cycleStartTime = tick()
 local maxCycleTime = 60
 
@@ -621,23 +636,23 @@ while true do
         statusLabel.Text = "Status: Waiting (max)"
         repeat task.wait(5) until not ShouldStopFarming()
         statusLabel.Text = "Status: Farming"
-        lastPickupTime = tick()
+        lastItemTime = tick()
         cycleStartTime = tick()
     end
 
-    local collected = false
     for Index, ItemInfo in pairs(getgenv().SpawnedItems) do
         local HumanoidRootPart = GetCharacter("HumanoidRootPart")
         if HumanoidRootPart then
             if not HasMaxItem(ItemInfo.Name) then
-                collected = true
-                lastPickupTime = tick()
+                lastItemTime = tick()
                 local ProximityPrompt = ItemInfo.ProximityPrompt
                 local Position = ItemInfo.Position
                 getgenv().SpawnedItems[Index] = nil
+                
                 local BodyVelocity = Instance.new("BodyVelocity")
                 BodyVelocity.Parent = HumanoidRootPart
                 BodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                
                 SetNoclip(true)
                 TeleportTo(CFrame.new(Position.X, Position.Y - 25, Position.Z))
                 task.wait(0.5)
@@ -655,37 +670,28 @@ while true do
 
     task.wait(3)
 
-    -- Дополнительная проверка: если долго не было подбора — хоп
-    if tick() - lastPickupTime > 25 then
-        statusLabel.Text = "Status: No pickup in 25s, hopping"
+    -- ЛОГИКА ПЕРЕХОДА (Server Hop)
+    if (tick() - lastItemTime > NO_ITEMS_TIMEOUT) or (tick() - cycleStartTime > maxCycleTime) then
         ServerHop()
         task.wait(10)
-        lastPickupTime = tick()
+        lastItemTime = tick()
         cycleStartTime = tick()
-        statusLabel.Text = "Status: Farming"
     end
 
-    -- Таймаут цикла (если цикл завис)
-    if tick() - cycleStartTime > maxCycleTime then
-        statusLabel.Text = "Status: Cycle timeout, hopping"
-        ServerHop()
-        task.wait(10)
-        lastPickupTime = tick()
-        cycleStartTime = tick()
-        statusLabel.Text = "Status: Farming"
-    end
-
-    -- Автоселл оставшихся предметов
+    -- Автоселл оставшихся
     if AutoSell then
         for Item, Sell in pairs(SellItems) do
             if Sell and Player.Backpack and Player.Backpack:FindFirstChild(Item) then
-                GetCharacter("Humanoid"):EquipTool(Player.Backpack:FindFirstChild(Item))
-                GetCharacter("RemoteEvent"):FireServer("EndDialogue", {
-                    NPC = "Merchant",
-                    Dialogue = "Dialogue5",
-                    Option = "Option2"
-                })
-                task.wait(0.1)
+                local tool = Player.Backpack:FindFirstChild(Item)
+                if tool then
+                    GetCharacter("Humanoid"):EquipTool(tool)
+                    GetCharacter("RemoteEvent"):FireServer("EndDialogue", {
+                        NPC = "Merchant",
+                        Dialogue = "Dialogue5",
+                        Option = "Option2"
+                    })
+                    task.wait(0.1)
+                end
             end
         end
     end
@@ -699,7 +705,6 @@ while true do
             task.wait(1)
             attempts = attempts + 1
             if CountLuckyArrows() >= 10 then break end
-            if attempts > 3 and CountLuckyArrows() == 9 then break end
         end
     end
 
