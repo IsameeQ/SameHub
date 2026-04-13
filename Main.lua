@@ -8,6 +8,7 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
 
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
@@ -26,6 +27,7 @@ end
 local KEY_URL = "https://raw.githubusercontent.com/IsameeQ/SameHub/main/keys.txt"
 local HWID_FILE = "SameHub_HWID.txt"
 local KEY_INFO_FILE = "SameHub_KeyInfo.txt"
+local RESET_LOG_FILE = "SameHub_ResetLog.txt"
 
 local function GetHWID()
     local executor = identifyexecutor and identifyexecutor() or "Unknown"
@@ -56,6 +58,17 @@ local function ResetHWID()
     if isfile(HWID_FILE) then delfile(HWID_FILE) end
 end
 
+local function CanResetHWID()
+    if not isfile(RESET_LOG_FILE) then return true end
+    local lastReset = tonumber(readfile(RESET_LOG_FILE))
+    if not lastReset then return true end
+    return (os.time() - lastReset) >= 86400
+end
+
+local function LogReset()
+    writefile(RESET_LOG_FILE, tostring(os.time()))
+end
+
 local function SaveKeyInfo(key)
     writefile(KEY_INFO_FILE, HttpService:JSONEncode({ key = key, activated = os.time() }))
 end
@@ -66,6 +79,14 @@ local function LoadKeyInfo()
         if success and data then return data end
     end
     return nil
+end
+
+local function GetDaysLeft()
+    local info = LoadKeyInfo()
+    if not info then return 0 end
+    local daysPassed = (os.time() - info.activated) / 86400
+    local left = 30 - daysPassed
+    return left > 0 and math.floor(left) or 0
 end
 
 local function IsKeyValid()
@@ -181,15 +202,15 @@ local SellItems = {
     ["Steel Ball"] = true, ["Dio's Diary"] = true
 }
 
--- ========== GUI ==========
+-- ========== GUI (с перетаскиванием и отображением дней подписки) ==========
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SameHub"
 screenGui.Parent = CoreGui
 screenGui.ResetOnSpawn = false
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 260, 0, 280)
-mainFrame.Position = UDim2.new(0.02, 0, 0.5, -140)
+mainFrame.Size = UDim2.new(0, 260, 0, 310)
+mainFrame.Position = UDim2.new(0.02, 0, 0.5, -155)
 mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 mainFrame.BackgroundTransparency = 0.05
 mainFrame.BorderSizePixel = 0
@@ -206,6 +227,31 @@ titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 18
 titleLabel.Parent = mainFrame
+
+-- Перетаскивание окна
+local dragging = false
+local dragStart
+local frameStart
+
+titleLabel.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        frameStart = mainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(frameStart.X.Scale, frameStart.X.Offset + delta.X, frameStart.Y.Scale, frameStart.Y.Offset + delta.Y)
+    end
+end)
 
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Size = UDim2.new(1, -20, 0, 25)
@@ -229,9 +275,20 @@ itemsLabel.TextSize = 13
 itemsLabel.TextXAlignment = Enum.TextXAlignment.Left
 itemsLabel.Parent = mainFrame
 
+local daysLabel = Instance.new("TextLabel")
+daysLabel.Size = UDim2.new(1, -20, 0, 25)
+daysLabel.Position = UDim2.new(0, 10, 0, 100)
+daysLabel.BackgroundTransparency = 1
+daysLabel.Text = "Days left: " .. GetDaysLeft()
+daysLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+daysLabel.Font = Enum.Font.Gotham
+daysLabel.TextSize = 13
+daysLabel.TextXAlignment = Enum.TextXAlignment.Left
+daysLabel.Parent = mainFrame
+
 local hwidLabel = Instance.new("TextLabel")
 hwidLabel.Size = UDim2.new(1, -20, 0, 25)
-hwidLabel.Position = UDim2.new(0, 10, 0, 100)
+hwidLabel.Position = UDim2.new(0, 10, 0, 130)
 hwidLabel.BackgroundTransparency = 1
 hwidLabel.Text = "HWID: " .. string.sub(currentHWID, 1, 16) .. "..."
 hwidLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
@@ -242,7 +299,7 @@ hwidLabel.Parent = mainFrame
 
 local resetButton = Instance.new("TextButton")
 resetButton.Size = UDim2.new(0.8, 0, 0, 30)
-resetButton.Position = UDim2.new(0.1, 0, 0, 140)
+resetButton.Position = UDim2.new(0.1, 0, 0, 170)
 resetButton.Text = "Reset HWID"
 resetButton.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
 resetButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -250,8 +307,15 @@ resetButton.Font = Enum.Font.GothamBold
 resetButton.TextSize = 13
 resetButton.Parent = mainFrame
 resetButton.MouseButton1Click:Connect(function()
+    if not CanResetHWID() then
+        statusLabel.Text = "Status: Reset only once per 24h"
+        task.wait(2)
+        statusLabel.Text = "Status: Farming"
+        return
+    end
     ResetHWID()
     ClearKeyInfo()
+    LogReset()
     Player:Kick("HWID reset. Restart script with a key.")
 end)
 
@@ -262,6 +326,7 @@ local function UpdateGUI()
             if SellItems[tool.Name] then count = count + 1 end
         end
         itemsLabel.Text = "Items to sell: " .. count
+        daysLabel.Text = "Days left: " .. GetDaysLeft()
     end)
 end
 task.spawn(function()
