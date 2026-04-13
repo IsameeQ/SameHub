@@ -3,8 +3,10 @@ local UserKey = _G.Key or ""
 
 local function VerifyAccess()
     local s, result = pcall(function() return game:HttpGet(KeysURL) end)
-    if s then
-        return string.find(result, UserKey) ~= nil
+    if s and result then
+        for k in result:gmatch("[^%s]+") do
+            if UserKey == k then return true end
+        end
     end
     return false
 end
@@ -21,88 +23,131 @@ local AutoSell = true
 local SellItems = {
     ["Gold Coin"] = true, ["Rokakaka"] = true, ["Pure Rokakaka"] = true,
     ["Mysterious Arrow"] = true, ["Diamond"] = true, ["Ancient Scroll"] = true,
-    ["Caesar's Headband"] = true, ["Stone Mask"] = true, ["Steel Ball"] = true,
+    ["Caesar's Headband"] = true, ["Stone Mask"] = true,
     ["Rib Cage of The Saint's Corpse"] = true, ["Quinton's Glove"] = true,
-    ["Zeppeli's Hat"] = true, ["Lucky Arrow"] = false, ["Clackers"] = true, ["Dio's Diary"] = true
+    ["Zeppeli's Hat"] = true, ["Lucky Arrow"] = false, ["Clackers"] = true,
+    ["Steel Ball"] = true, ["Dio's Diary"] = true
 }
 
+local Workspace = game:GetService("Workspace")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MarketplaceService = game:GetService("MarketplaceService")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
 
-local oldNc; oldNc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+local oldNc
+oldNc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     local Args = {...}
-    if not checkcaller() and self.Name == "Returner" and Args[1] == "idklolbrah2de" then
+    if not checkcaller() and rawequal(self.Name, "Returner") and rawequal(Args[1], "idklolbrah2de") then
         return "  ___XP DE KEY"
     end
     return oldNc(self, ...)
 end))
 
-local function SafeTeleport(targetPos)
-    local Root = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-    if not Root then return end
-    
-    local distance = (Root.Position - targetPos.Position).Magnitude
-    local info = TweenInfo.new(distance / 150, Enum.EasingStyle.Linear)
-    local tween = TweenService:Create(Root, info, {CFrame = targetPos})
-    
-    local connection = game:GetService("RunService").Stepped:Connect(function()
-        if Player.Character then
-            for _, part in pairs(Player.Character:GetDescendants()) do
-                if part:IsA("BasePart") then part.CanCollide = false end
-            end
-        end
-    end)
-    
-    tween:Play()
-    tween.Completed:Wait()
-    connection:Disconnect()
+local function GetCharacter(Part)
+    if Player.Character then
+        if not Part then return Player.Character
+        elseif typeof(Part) == "string" then return Player.Character:FindFirstChild(Part) end
+    end
+    return nil
 end
+
+local function TeleportTo(Position)
+    local HRP = GetCharacter("HumanoidRootPart")
+    if HRP and typeof(Position) == "CFrame" then HRP.CFrame = Position end
+end
+
+local function ToggleNoclip(Value)
+    local Char = GetCharacter()
+    if Char then
+        for _, v in pairs(Char:GetDescendants()) do
+            if v:IsA("BasePart") then v.CanCollide = not Value end
+        end
+    end
+end
+
+local MaxItemAmounts = {
+    ["Gold Coin"] = 45, ["Rokakaka"] = 25, ["Pure Rokakaka"] = 10, ["Mysterious Arrow"] = 25,
+    ["Diamond"] = 30, ["Ancient Scroll"] = 10, ["Caesar's Headband"] = 10, ["Stone Mask"] = 10,
+    ["Rib Cage of The Saint's Corpse"] = 20, ["Quinton's Glove"] = 10, ["Zeppeli's Hat"] = 10,
+    ["Lucky Arrow"] = 10, ["Clackers"] = 10, ["Steel Ball"] = 10, ["Dio's Diary"] = 10
+}
+
+if MarketplaceService:UserOwnsGamePassAsync(Player.UserId, 14597778) then
+    for i, v in pairs(MaxItemAmounts) do MaxItemAmounts[i] = v * 2 end
+end
+
+local function HasMaxItem(Item)
+    local c = 0
+    for _, t in pairs(Player.Backpack:GetChildren()) do if t.Name == Item then c = c + 1 end end
+    return MaxItemAmounts[Item] and c >= MaxItemAmounts[Item] or false
+end
+
+local ServerHop = loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))
+
+getgenv().SpawnedItems = {}
+local ItemSpawnFolder = Workspace:WaitForChild("Item_Spawns", 10):WaitForChild("Items", 10)
+
+ItemSpawnFolder.ChildAdded:Connect(function(m)
+    task.wait(1)
+    if m:IsA("Model") and m.PrimaryPart then
+        local p = m:FindFirstChildOfClass("ProximityPrompt")
+        if p then getgenv().SpawnedItems[m] = {Name = p.ObjectText, ProximityPrompt = p, Position = m.PrimaryPart.Position} end
+    end
+end)
 
 task.spawn(function()
     pcall(function()
-        if PlayerGui:FindFirstChild("LoadingScreen1") then PlayerGui.LoadingScreen1:Destroy() end
-        if PlayerGui:FindFirstChild("LoadingScreen") then PlayerGui.LoadingScreen:Destroy() end
+        PlayerGui:WaitForChild("LoadingScreen1"):Destroy()
+        task.wait(0.5)
+        PlayerGui:WaitForChild("LoadingScreen"):Destroy()
     end)
 end)
 
-task.spawn(function()
-    while true do
-        pcall(function()
-            local items = workspace:FindFirstChild("Item_Spawns")
-            if items and items:FindFirstChild("Items") then
-                for _, item in pairs(items.Items:GetChildren()) do
-                    if item:IsA("Model") and item.PrimaryPart then
-                        local prompt = item:FindFirstChildOfClass("ProximityPrompt")
-                        if prompt then
-                            SafeTeleport(item.PrimaryPart.CFrame + Vector3.new(0, 5, 0))
-                            task.wait(0.3)
-                            fireproximityprompt(prompt)
-                            task.wait(0.2)
-                        end
-                    end
-                end
-            end
+repeat task.wait() until GetCharacter() and GetCharacter("RemoteEvent")
+GetCharacter("RemoteEvent"):FireServer("PressedPlay")
+TeleportTo(CFrame.new(978, -42, -49))
+task.wait(5)
 
-            if AutoSell then
-                local event = Player.Character:FindFirstChild("RemoteEvent")
-                if event then
-                    for _, tool in pairs(Player.Backpack:GetChildren()) do
-                        if SellItems[tool.Name] then
-                            Player.Character.Humanoid:EquipTool(tool)
-                            event:FireServer("EndDialogue", {["NPC"] = "Merchant", ["Dialogue"] = "Dialogue5", ["Option"] = "Option2"})
-                            task.wait(0.1)
-                        end
-                    end
-                end
+while true do
+    for m, info in pairs(getgenv().SpawnedItems) do
+        if not HasMaxItem(info.Name) then
+            local HRP = GetCharacter("HumanoidRootPart")
+            if HRP then
+                getgenv().SpawnedItems[m] = nil
+                local bv = Instance.new("BodyVelocity", HRP)
+                bv.Velocity = Vector3.new(0, 0, 0)
+                ToggleNoclip(true)
+                TeleportTo(CFrame.new(info.Position.X, info.Position.Y + 25, info.Position.Z))
+                task.wait(0.5)
+                fireproximityprompt(info.ProximityPrompt)
+                task.wait(0.5)
+                bv:Destroy()
+                TeleportTo(CFrame.new(978, -42, -49))
             end
-            
-            if BuyLucky and Player.PlayerStats.Money.Value >= 75000 then
-                 Player.Character.RemoteEvent:FireServer("PurchaseShopItem", {["ItemName"] = "1x Lucky Arrow"})
-            end
-        end)
-        task.wait(5)
+        else
+            getgenv().SpawnedItems[m] = nil
+        end
     end
-end)
+
+    if AutoSell then
+        for item, sell in pairs(SellItems) do
+            if sell and Player.Backpack:FindFirstChild(item) then
+                GetCharacter("Humanoid"):EquipTool(Player.Backpack[item])
+                GetCharacter("RemoteEvent"):FireServer("EndDialogue", {["NPC"] = "Merchant", ["Dialogue"] = "Dialogue5", ["Option"] = "Option2"})
+                task.wait(0.1)
+            end
+        end
+    end
+
+    local Money = Player.PlayerStats.Money
+    if BuyLucky and Money.Value >= 75000 then
+        Player.Character.RemoteEvent:FireServer("PurchaseShopItem", {["ItemName"] = "1x Lucky Arrow"})
+        task.wait(1)
+    end
+
+    task.wait(5)
+    ServerHop()
+    task.wait(10)
+end
