@@ -399,28 +399,7 @@ local function CountLuckyArrows()
     return count
 end
 
-local function HasLuckyArrows() return CountLuckyArrows() >= 10 end
-local function IsMoneyMaxed() return Player.PlayerStats.Money.Value >= 1000000 end
-
-local function AllKeepItemsFull()
-    local hasAnyKeepItem = false
-    for Item, Sell in pairs(SellItems) do
-        if not Sell and Item ~= "Lucky Arrow" then
-            hasAnyKeepItem = true
-            if not HasMaxItem(Item) then return false end
-        end
-    end
-    if not hasAnyKeepItem then return false end
-    return true
-end
-
-local function ShouldStopFarming()
-    if AllKeepItemsFull() then return true end
-    if HasLuckyArrows() and IsMoneyMaxed() then return true end
-    return false
-end
-
--- ========== СЕРВЕР-ХОП (10 СЕКУНД БЕЗ ПРЕДМЕТОВ НА КАРТЕ) ==========
+-- ========== СЕРВЕР-ХОП (10 СЕКУНД БЕЗ ПРЕДМЕТОВ) ==========
 local function ServerHop()
     local servers = {}
     local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
@@ -562,11 +541,7 @@ end)
 
 task.wait(5)
 
--- ========== ОСНОВНОЙ ЦИКЛ ФАРМА ==========
-local lastPickupTime = tick()
-local cycleStartTime = tick()
-local maxCycleTime = 60
-
+-- ========== ОСНОВНОЙ ЦИКЛ ФАРМА (БЕЗ ОСТАНОВКИ) ==========
 local function SellItemNow(itemName)
     if AutoSell and SellItems[itemName] then
         local tool = Player.Backpack:FindFirstChild(itemName)
@@ -593,19 +568,11 @@ Player.Backpack.ChildAdded:Connect(function(tool)
 end)
 
 while true do
-    if ShouldStopFarming() then
-        statusLabel.Text = "Status: Waiting (max)"
-        repeat task.wait(5) until not ShouldStopFarming()
-        statusLabel.Text = "Status: Farming"
-        lastPickupTime = tick()
-        cycleStartTime = tick()
-    end
-
+    -- Собираем предметы
     for Index, ItemInfo in pairs(getgenv().SpawnedItems) do
         local HumanoidRootPart = GetCharacter("HumanoidRootPart")
         if HumanoidRootPart then
             if not HasMaxItem(ItemInfo.Name) then
-                lastPickupTime = tick()
                 local ProximityPrompt = ItemInfo.ProximityPrompt
                 local Position = ItemInfo.Position
                 getgenv().SpawnedItems[Index] = nil
@@ -629,15 +596,7 @@ while true do
 
     task.wait(3)
 
-    if (tick() - lastPickupTime > 25) or (tick() - cycleStartTime > maxCycleTime) then
-        statusLabel.Text = "Status: No pickup or timeout, hopping"
-        ServerHop()
-        task.wait(10)
-        lastPickupTime = tick()
-        cycleStartTime = tick()
-        statusLabel.Text = "Status: Farming"
-    end
-
+    -- Автоселл оставшихся предметов
     if AutoSell then
         for Item, Sell in pairs(SellItems) do
             if Sell and Player.Backpack and Player.Backpack:FindFirstChild(Item) then
@@ -652,15 +611,14 @@ while true do
         end
     end
 
+    -- Покупка Lucky Arrows
     local Money = Player.PlayerStats.Money
-    if BuyLucky and not HasLuckyArrows() then
+    if BuyLucky and CountLuckyArrows() < 10 then
         local attempts = 0
-        while Money.Value >= 75000 and attempts < 15 do
+        while Money.Value >= 75000 and attempts < 15 and CountLuckyArrows() < 10 do
             Player.Character.RemoteEvent:FireServer("PurchaseShopItem", { ItemName = "1x Lucky Arrow" })
             task.wait(1)
             attempts = attempts + 1
-            if CountLuckyArrows() >= 10 then break end
-            if attempts > 3 and CountLuckyArrows() == 9 then break end
         end
     end
 
