@@ -18,7 +18,6 @@ end
 
 repeat task.wait(0.1) until game:IsLoaded()
 
--- Конфиг
 local BuyLucky = true
 local AutoSell = true
 local SellItems = {
@@ -37,32 +36,19 @@ local MaxItemAmounts = {
     ["Lucky Arrow"] = 10, ["Clackers"] = 10, ["Steel Ball"] = 10, ["Dio's Diary"] = 10
 }
 
-local Players = game:GetService("Players")
-local Player = Players.LocalPlayer
-local PlayerGui = Player:WaitForChild("PlayerGui")
+local Player = game:GetService("Players").LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local MarketplaceService = game:GetService("MarketplaceService")
 
--- Лимиты X2
-pcall(function()
-    if MarketplaceService:UserOwnsGamePassAsync(Player.UserId, 14597778) then
-        for i, v in pairs(MaxItemAmounts) do MaxItemAmounts[i] = v * 2 end
-    end
-end)
-
--- Моментальный скип GUI
+-- Скип интро
 task.spawn(function()
     pcall(function()
-        local guis = {"LoadingScreen", "LoadingScreen1", "TeleportGui", "IntroGui"}
-        for _, n in pairs(guis) do if PlayerGui:FindFirstChild(n) then PlayerGui[n]:Destroy() end end
-        local blur = game:GetService("Lighting"):FindFirstChildOfClass("BlurEffect")
-        if blur then blur:Destroy() end
-        local event = ReplicatedStorage:FindFirstChild("RemoteEvent") or (ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("RemoteEvent"))
-        if event then event:FireServer("PressedPlay") end
+        if Player.PlayerGui:FindFirstChild("LoadingScreen") then Player.PlayerGui.LoadingScreen:Destroy() end
+        local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or (ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("RemoteEvent"))
+        if remote then remote:FireServer("PressedPlay") end
     end)
 end)
 
--- Анти-чит
+-- Байпас античита (из твоих файлов)
 local oldNc
 oldNc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     local Args = {...}
@@ -77,50 +63,55 @@ local function GetCharacter() return Player.Character or Player.CharacterAdded:W
 local function HasMaxItem(name)
     local count = 0
     for _, t in pairs(Player.Backpack:GetChildren()) do if t.Name == name then count = count + 1 end end
-    if GetCharacter():FindFirstChild(name) then count = count + 1 end
     return count >= (MaxItemAmounts[name] or 99)
 end
 
--- Загрузка ServerHop
 local ServerHop = loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))
 
--- Ждем персонажа
-repeat task.wait(0.5) until GetCharacter():FindFirstChild("RemoteEvent")
-task.wait(1)
+-- Функция поиска ПРЕДМЕТОВ по всему Workspace
+local function FindItems()
+    local found = {}
+    -- Ищем во всем ворлдспейсе объекты, у которых есть ProximityPrompt
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.Parent:IsA("Model") then
+            local model = obj.Parent
+            if model.PrimaryPart or model:FindFirstChildOfClass("BasePart") then
+                table.insert(found, {Model = model, Prompt = obj, Name = obj.ObjectText})
+            end
+        end
+    end
+    return found
+end
 
--- Основной цикл
+repeat task.wait(1) until GetCharacter():FindFirstChild("RemoteEvent")
+
 while true do
-    local ItemSpawnFolder = workspace:FindFirstChild("Item_Spawns") and workspace.Item_Spawns:FindFirstChild("Items")
-    local itemsFound = false
+    local items = FindItems()
+    local collectedAny = false
 
-    if ItemSpawnFolder then
-        local allItems = ItemSpawnFolder:GetChildren()
-        
-        for _, item in pairs(allItems) do
-            if item:IsA("Model") and item.PrimaryPart then
-                local prompt = item:FindFirstChildOfClass("ProximityPrompt")
-                local itemName = prompt and prompt.ObjectText or "Unknown"
+    if #items > 0 then
+        for _, itemData in pairs(items) do
+            if not HasMaxItem(itemData.Name) then
+                local hrp = GetCharacter():FindFirstChild("HumanoidRootPart")
+                local targetPart = itemData.Model.PrimaryPart or itemData.Model:FindFirstChildOfClass("BasePart")
                 
-                if not HasMaxItem(itemName) then
-                    itemsFound = true
-                    local hrp = GetCharacter():FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        local bv = Instance.new("BodyVelocity", hrp)
-                        bv.Velocity = Vector3.new(0,0,0)
-                        bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-                        
-                        hrp.CFrame = item.PrimaryPart.CFrame + Vector3.new(0, 5, 0)
-                        task.wait(0.3)
-                        fireproximityprompt(prompt)
-                        task.wait(0.2)
-                        bv:Destroy()
-                    end
+                if hrp and targetPart then
+                    collectedAny = true
+                    local bv = Instance.new("BodyVelocity", hrp)
+                    bv.Velocity = Vector3.new(0,0,0)
+                    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+                    
+                    hrp.CFrame = targetPart.CFrame + Vector3.new(0, 5, 0)
+                    task.wait(0.3)
+                    fireproximityprompt(itemData.Prompt)
+                    task.wait(0.2)
+                    bv:Destroy()
                 end
             end
         end
     end
 
-    -- После сбора (или если их нет) — дополнительные действия
+    -- Продажа и покупка
     if AutoSell then
         pcall(function()
             local remote = GetCharacter():FindFirstChild("RemoteEvent")
@@ -134,13 +125,8 @@ while true do
         end)
     end
 
-    if BuyLucky and Player.PlayerStats.Money.Value >= 75000 then
-        local remote = GetCharacter():FindFirstChild("RemoteEvent")
-        if remote then remote:FireServer("PurchaseShopItem", {["ItemName"] = "1x Lucky Arrow"}) end
-    end
-
-    -- СЕРВЕР ХОП: только если предметов больше нет
+    -- Мгновенный лив, если предметов больше нет
     task.wait(0.5)
-    ServerHop() 
-    task.wait(2) -- Защита от бесконечного цикла, если хоп не сработал сразу
+    ServerHop()
+    task.wait(3)
 end
