@@ -464,9 +464,9 @@ local function CountLuckyArrows()
     return count
 end
 
--- ========== СЕРВЕР-ХОП (ПРОВЕРЕННЫЙ ВАРИАНТ) ==========
+-- ========== СЕРВЕР-ХОП (С ОТЛАДКОЙ И FALLBACK) ==========
 local function ServerHop()
-    local Player = game.Players.LocalPlayer
+    print("🔄 ServerHop triggered")
     local HttpService = game:GetService("HttpService")
     local TeleportService = game:GetService("TeleportService")
     local Api = "https://games.roblox.com/v1/games/"
@@ -474,49 +474,48 @@ local function ServerHop()
     local serversUrl = Api .. placeId .. "/servers/Public?sortOrder=Desc&limit=100"
 
     local function listServers(cursor)
-        local raw = game:HttpGet(serversUrl .. ((cursor and "&cursor=" .. cursor) or ""))
-        return HttpService:JSONDecode(raw)
+        local url = serversUrl .. ((cursor and "&cursor=" .. cursor) or "")
+        local success, raw = pcall(game.HttpGet, game, url)
+        if not success then
+            warn("❌ Failed to fetch servers: " .. tostring(raw))
+            return nil
+        end
+        local success2, data = pcall(HttpService.JSONDecode, HttpService, raw)
+        if not success2 then
+            warn("❌ Failed to decode JSON: " .. tostring(data))
+            return nil
+        end
+        return data
     end
 
     local nextCursor
+    local found = false
     repeat
         local servers = listServers(nextCursor)
+        if not servers or not servers.data then break end
         for _, server in ipairs(servers.data) do
             if server.playing < server.maxPlayers and server.id ~= jobId then
+                print("🎯 Attempting to teleport to server: " .. server.id)
                 local success, err = pcall(TeleportService.TeleportToPlaceInstance, TeleportService, placeId, server.id, Player)
                 if success then
-                    return -- успешно телепортировались
+                    print("✅ Teleport successful")
+                    found = true
+                    break
+                else
+                    warn("⚠️ Teleport failed: " .. tostring(err))
                 end
             end
         end
+        if found then break end
         nextCursor = servers.nextPageCursor
     until not nextCursor
-end
 
--- Отдельный поток: проверка каждую секунду, если 3 секунды нет предметов — хоп
-task.spawn(function()
-    local timeWithNoItems = 0
-    local checkInterval = 1
-    local maxEmptyTime = 3
-    while true do
-        task.wait(checkInterval)
-        if ItemSpawnFolder then
-            local currentItems = #ItemSpawnFolder:GetChildren()
-            if currentItems == 0 then
-                timeWithNoItems = timeWithNoItems + checkInterval
-            else
-                timeWithNoItems = 0
-            end
-            if timeWithNoItems >= maxEmptyTime then
-                statusLabel.Text = "Status: No items on map, hopping"
-                ServerHop()
-                task.wait(10)
-                timeWithNoItems = 0
-                statusLabel.Text = "Status: Farming"
-            end
-        end
+    if not found then
+        warn("❌ No available servers found, using generic teleport")
+        -- Запасной вариант: просто телепорт в плейс (может вернуть в тот же сервер, но сработает)
+        TeleportService:Teleport(placeId, Player)
     end
-end)
+end
 
 -- ========== ОБНАРУЖЕНИЕ ПРЕДМЕТОВ ==========
 local function GetItemInfo(Model)
