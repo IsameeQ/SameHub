@@ -464,59 +464,59 @@ local function CountLuckyArrows()
     return count
 end
 
--- ========== СЕРВЕР-ХОП (С ОТЛАДКОЙ И FALLBACK) ==========
-local function ServerHop()
-    print("🔄 ServerHop triggered")
-    local HttpService = game:GetService("HttpService")
-    local TeleportService = game:GetService("TeleportService")
-    local Api = "https://games.roblox.com/v1/games/"
-    local placeId, jobId = game.PlaceId, game.JobId
-    local serversUrl = Api .. placeId .. "/servers/Public?sortOrder=Desc&limit=100"
+-- ========== СЕРВЕР-ХОП (ВНЕШНИЙ СКРИПТ + ЗАПАСНОЙ ВАРИАНТ) ==========
+local ServerHop
 
-    local function listServers(cursor)
-        local url = serversUrl .. ((cursor and "&cursor=" .. cursor) or "")
-        local success, raw = pcall(game.HttpGet, game, url)
-        if not success then
-            warn("❌ Failed to fetch servers: " .. tostring(raw))
-            return nil
-        end
-        local success2, data = pcall(HttpService.JSONDecode, HttpService, raw)
-        if not success2 then
-            warn("❌ Failed to decode JSON: " .. tostring(data))
-            return nil
-        end
-        return data
-    end
+-- 1. Пробуем загрузить внешний скрипт
+local success, externalHop = pcall(function()
+    return loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))()
+end)
 
-    local nextCursor
-    local found = false
-    repeat
-        local servers = listServers(nextCursor)
-        if not servers or not servers.data then break end
-        for _, server in ipairs(servers.data) do
-            if server.playing < server.maxPlayers and server.id ~= jobId then
-                print("🎯 Attempting to teleport to server: " .. server.id)
-                local success, err = pcall(TeleportService.TeleportToPlaceInstance, TeleportService, placeId, server.id, Player)
-                if success then
-                    print("✅ Teleport successful")
-                    found = true
-                    break
-                else
-                    warn("⚠️ Teleport failed: " .. tostring(err))
+if success and type(externalHop) == "function" then
+    ServerHop = externalHop
+    print("✅ ServerHop loaded from external source")
+else
+    warn("⚠️ External ServerHop failed: " .. tostring(externalHop))
+    
+    -- 2. Запасной вариант через Roblox API
+    function ServerHop()
+        print("🔄 Using fallback ServerHop")
+        local HttpService = game:GetService("HttpService")
+        local TeleportService = game:GetService("TeleportService")
+        local Api = "https://games.roblox.com/v1/games/"
+        local placeId, jobId = game.PlaceId, game.JobId
+        local serversUrl = Api .. placeId .. "/servers/Public?sortOrder=Desc&limit=100"
+
+        local function listServers(cursor)
+            local url = serversUrl .. ((cursor and "&cursor=" .. cursor) or "")
+            local success, raw = pcall(game.HttpGet, game, url)
+            if not success then return nil end
+            local success2, data = pcall(HttpService.JSONDecode, HttpService, raw)
+            if not success2 then return nil end
+            return data
+        end
+
+        local nextCursor
+        repeat
+            local servers = listServers(nextCursor)
+            if not servers or not servers.data then break end
+            for _, server in ipairs(servers.data) do
+                if server.playing < server.maxPlayers and server.id ~= jobId then
+                    local success, err = pcall(TeleportService.TeleportToPlaceInstance, TeleportService, placeId, server.id, Player)
+                    if success then
+                        print("✅ Teleported to " .. server.id)
+                        return
+                    end
                 end
             end
-        end
-        if found then break end
-        nextCursor = servers.nextPageCursor
-    until not nextCursor
+            nextCursor = servers.nextPageCursor
+        until not nextCursor
 
-    if not found then
-        warn("❌ No available servers found, using generic teleport")
-        -- Запасной вариант: просто телепорт в плейс (может вернуть в тот же сервер, но сработает)
+        -- 3. Если ничего не нашли – принудительный реджоин
+        warn("❌ No servers found, force rejoining...")
         TeleportService:Teleport(placeId, Player)
     end
 end
-
 -- ========== ОБНАРУЖЕНИЕ ПРЕДМЕТОВ ==========
 local function GetItemInfo(Model)
     if Model and Model:IsA("Model") and Model.Parent and Model.Parent.Name == "Items" then
