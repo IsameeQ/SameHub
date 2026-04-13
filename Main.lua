@@ -1,7 +1,12 @@
--- FULL MERGE FROM UPLOADED SCRIPTS
+-- FULL MERGE: ITEMFARM + XENON + CONFIRMED
+-- Прямое копирование логики из твоих 5 файлов
+
+print("Waiting Loading...")
+task.wait(8.0) -- Из message (1).txt
+
 repeat task.wait() until game:IsLoaded()
 
--- Конфигурация из твоих исходников
+-- Таблица из Confirmed_YBAV7.txt
 local BuyLucky = true
 local AutoSell = true
 local SellItems = {
@@ -25,23 +30,27 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
 
--- 1. ЖЕСТКАЯ ЗАДЕРЖКА ЗАГРУЗКИ (из message (1).txt)
-print("Waiting Loading...")
-task.wait(8.0)
+-- 1. ОПТИМИЗАЦИЯ КАРТЫ (из xenon v3+cream.txt)
+local MapFolder = Instance.new("Folder", workspace)
+for _, Part in pairs(workspace:GetDescendants()) do
+    if Part:IsA("BasePart") and Part.Parent == workspace.Map then
+        task.spawn(function() Part.Parent = MapFolder end)
+    end
+end
 
--- 2. СКИН ГУИ И ПОДТВЕРЖДЕНИЕ ВХОДА (из ITEMFARM.txt)
+-- 2. ВХОД В ИГРУ (из ITEMFARM.txt)
 task.spawn(function()
     pcall(function()
         local pg = Player:WaitForChild("PlayerGui")
-        local guis = {"LoadingScreen", "LoadingScreen1", "TeleportGui", "IntroGui"}
-        for _, n in pairs(guis) do if pg:FindFirstChild(n) then pg[n]:Destroy() end end
+        if pg:FindFirstChild("LoadingScreen") then pg.LoadingScreen:Destroy() end
+        if pg:FindFirstChild("IntroGui") then pg.IntroGui:Destroy() end
         
         local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:WaitForChild("Events"):FindFirstChild("RemoteEvent")
         remote:FireServer("PressedPlay")
     end)
 end)
 
--- 3. АНТИЧИТ БАЙПАС (из Confirmed_YBAV7.txt)
+-- 3. АНТИЧИТ БАЙПАС (из 2h236hb.txt)
 local old
 old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     local args = {...}
@@ -51,102 +60,89 @@ old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     return old(self, ...)
 end))
 
--- 4. SERVER HOP (Логика из Xenon V3)
+-- 4. SERVER HOP (из Confirmed_YBAV7.txt)
 local function ServerHop()
-    local servers = {}
+    local x = {}
     local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
     local data = HttpService:JSONDecode(res)
     for _, v in pairs(data.data) do
         if v.playing < v.maxPlayers and v.id ~= game.JobId then
-            table.insert(servers, v.id)
+            table.insert(x, v.id)
         end
     end
-    if #servers > 0 then
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)])
+    if #x > 0 then
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, x[math.random(1, #x)])
     else
         loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))()
     end
 end
 
--- 5. ФУНКЦИИ ПРОВЕРКИ
-local function CanPick(name)
-    local c = 0
-    for _, v in pairs(Player.Backpack:GetChildren()) do if v.Name == name then c = c + 1 end end
-    if Player.Character and Player.Character:FindFirstChild(name) then c = c + 1 end
-    return c < (MaxItems[name] or 99)
+-- 5. ЛОГИКА СБОРА (из ITEMFARM.txt)
+local function GetItemCount(name)
+    local count = 0
+    for _, v in pairs(Player.Backpack:GetChildren()) do if v.Name == name then count = count + 1 end end
+    if Player.Character and Player.Character:FindFirstChild(name) then count = count + 1 end
+    return count
 end
 
--- 6. ГЛАВНЫЙ ЦИКЛ (Скрещенная логика из твоих 5 файлов)
 task.spawn(function()
+    -- Ждем персонажа как в исходнике
     repeat task.wait(1) until Player.Character and Player.Character:FindFirstChild("RemoteEvent")
-    local char = Player.Character
-    local hrp = char:WaitForChild("HumanoidRootPart")
+    local Root = Player.Character:WaitForChild("HumanoidRootPart")
     
-    -- Проверка предметов (с ожиданием прогрузки папки)
-    local folder = workspace:WaitForChild("Item_Spawns", 5):WaitForChild("Items", 5)
+    -- Даем вещам заспавниться (важно!)
+    task.wait(2)
     
-    if folder then
-        local items = folder:GetChildren()
-        
-        -- Если предметов нет, ждем еще 2 секунды (анти-скип)
-        if #items == 0 then
-            task.wait(2)
-            items = folder:GetChildren()
-        end
-
-        if #items > 0 then
-            print("Items found: " .. #items)
-            for _, item in pairs(items) do
+    local ItemSpawns = workspace:FindFirstChild("Item_Spawns") and workspace.Item_Spawns:FindFirstChild("Items")
+    
+    if ItemSpawns then
+        local allItems = ItemSpawns:GetChildren()
+        if #allItems > 0 then
+            for _, item in pairs(allItems) do
                 if item:IsA("Model") and item.PrimaryPart then
                     local prompt = item:FindFirstChildOfClass("ProximityPrompt")
-                    if prompt and CanPick(prompt.ObjectText) then
-                        -- Стабилизатор чтобы не кикало (BodyVelocity)
-                        local bv = Instance.new("BodyVelocity", hrp)
-                        bv.Velocity = Vector3.new(0,0,0)
-                        bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+                    if prompt and GetItemCount(prompt.ObjectText) < (MaxItems[prompt.ObjectText] or 99) then
                         
-                        hrp.CFrame = item.PrimaryPart.CFrame
+                        -- Телепорт (логика из Confirmed)
+                        Root.CFrame = item.PrimaryPart.CFrame
                         task.wait(0.3)
                         fireproximityprompt(prompt)
-                        task.wait(0.1)
-                        
-                        bv:Destroy()
+                        task.wait(0.2)
                     end
                 end
             end
         end
     end
 
-    -- АВТО-ПРОДАЖА (Remote Only - без ТП к NPC)
+    -- 6. ПРОДАЖА (из message (1).txt)
     if AutoSell then
         pcall(function()
+            local remote = Player.Character.RemoteEvent
             for _, tool in pairs(Player.Backpack:GetChildren()) do
                 if SellItems[tool.Name] then
-                    char.Humanoid:EquipTool(tool)
-                    char.RemoteEvent:FireServer("EndDialogue", {["NPC"] = "Merchant", ["Dialogue"] = "Dialogue5", ["Option"] = "Option2"})
+                    Player.Character.Humanoid:EquipTool(tool)
+                    remote:FireServer("EndDialogue", {["NPC"] = "Merchant", ["Dialogue"] = "Dialogue5", ["Option"] = "Option2"})
                     task.wait(0.1)
                 end
             end
         end)
     end
 
-    -- ПОКУПКА ЛАККИ
+    -- 7. ПОКУПКА ЛАККИ (из ITEMFARM.txt)
     if BuyLucky and Player.PlayerStats.Money.Value >= 75000 then
-        char.RemoteEvent:FireServer("PurchaseShopItem", {["ItemName"] = "1x Lucky Arrow"})
+        Player.Character.RemoteEvent:FireServer("PurchaseShopItem", {["ItemName"] = "1x Lucky Arrow"})
         task.wait(0.5)
     end
 
-    -- МОМЕНТАЛЬНЫЙ ПЕРЕХОД
+    -- 8. ПРЫЖОК
     ServerHop()
 end)
 
--- No-Collide цикл (из message (1).txt)
-task.spawn(function()
-    while task.wait(0.2) do
-        if Player.Character then
-            for _, v in pairs(Player.Character:GetDescendants()) do
-                if v:IsA("BasePart") then v.CanCollide = false end
-            end
+-- 9. NO COLLIDE (из 2h236hb.txt)
+game:GetService("RunService").Stepped:Connect(function()
+    if Player.Character then
+        for _, v in pairs(Player.Character:GetDescendants()) do
+            if v:IsA("BasePart") then v.CanCollide = false end
         end
     end
 end)
