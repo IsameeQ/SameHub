@@ -399,10 +399,16 @@ if Has2x then
     for k, v in pairs(MaxItemAmounts) do MaxItemAmounts[k] = v * 2 end
 end
 
+-- Исправленная HasMaxItem (учитывает экипированные предметы)
 local function HasMaxItem(Item)
     local Count = 0
     for _, Tool in pairs(Player.Backpack:GetChildren()) do
         if Tool.Name == Item then Count += 1 end
+    end
+    if Player.Character then
+        for _, Tool in pairs(Player.Character:GetChildren()) do
+            if Tool:IsA("Tool") and Tool.Name == Item then Count += 1 end
+        end
     end
     return MaxItemAmounts[Item] and Count >= MaxItemAmounts[Item] or false
 end
@@ -423,12 +429,16 @@ end
 local function HasLuckyArrows() return CountLuckyArrows() >= 10 end
 local function IsMoneyMaxed() return Player.PlayerStats.Money.Value >= 1000000 end
 
+-- Исправленная AllKeepItemsFull (с проверкой hasAnyKeepItem)
 local function AllKeepItemsFull()
+    local hasAnyKeepItem = false
     for Item, Sell in pairs(SellItems) do
         if not Sell and Item ~= "Lucky Arrow" then
+            hasAnyKeepItem = true
             if not HasMaxItem(Item) then return false end
         end
     end
+    if not hasAnyKeepItem then return false end
     return true
 end
 
@@ -438,7 +448,7 @@ local function ShouldStopFarming()
     return false
 end
 
--- ========== СЕРВЕР-ХОП (ПЕРЕДЕЛАН, РАБОТАЕТ) ==========
+-- ========== СЕРВЕР-ХОП (рабочий) ==========
 local function ServerHop()
     local servers = {}
     local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
@@ -455,7 +465,7 @@ local function ServerHop()
     end
 end
 
--- Отдельный поток: каждые 5 секунд проверяем наличие предметов в папке
+-- Отдельный поток для проверки наличия предметов на карте
 task.spawn(function()
     local timeWithNoItems = 0
     local checkInterval = 5
@@ -585,8 +595,7 @@ end)
 task.wait(5)
 
 -- ========== ОСНОВНОЙ ЦИКЛ ФАРМА ==========
-local lastItemTime = tick()
-local NO_ITEMS_TIMEOUT = 25
+local lastPickupTime = tick()
 local cycleStartTime = tick()
 local maxCycleTime = 60
 
@@ -620,7 +629,7 @@ while true do
         statusLabel.Text = "Status: Waiting (max)"
         repeat task.wait(5) until not ShouldStopFarming()
         statusLabel.Text = "Status: Farming"
-        lastItemTime = tick()
+        lastPickupTime = tick()
         cycleStartTime = tick()
     end
 
@@ -630,7 +639,7 @@ while true do
         if HumanoidRootPart then
             if not HasMaxItem(ItemInfo.Name) then
                 collected = true
-                lastItemTime = tick()
+                lastPickupTime = tick()
                 local ProximityPrompt = ItemInfo.ProximityPrompt
                 local Position = ItemInfo.Position
                 getgenv().SpawnedItems[Index] = nil
@@ -654,12 +663,12 @@ while true do
 
     task.wait(3)
 
-    -- Дополнительные проверки для хопа
-    if (tick() - lastItemTime > NO_ITEMS_TIMEOUT) or (tick() - cycleStartTime > maxCycleTime) then
+    -- Хоп при отсутствии подбора или зависании цикла
+    if (tick() - lastPickupTime > 25) or (tick() - cycleStartTime > maxCycleTime) then
         statusLabel.Text = "Status: No pickup or timeout, hopping"
         ServerHop()
         task.wait(10)
-        lastItemTime = tick()
+        lastPickupTime = tick()
         cycleStartTime = tick()
         statusLabel.Text = "Status: Farming"
     end
