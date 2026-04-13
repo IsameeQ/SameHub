@@ -50,7 +50,19 @@ local function ResetHWID()
     end
 end
 
--- ========== УПРАВЛЕНИЕ КЛЮЧОМ (30 дней) ==========
+-- ========== СБРОС HWID (1 раз в 24 часа) ==========
+local function CanResetHWID()
+    if not isfile(RESET_LOG_FILE) then return true end
+    local lastReset = tonumber(readfile(RESET_LOG_FILE))
+    if not lastReset then return true end
+    return (os.time() - lastReset) >= 86400
+end
+
+local function LogReset()
+    writefile(RESET_LOG_FILE, tostring(os.time()))
+end
+
+-- ========== КЛЮЧ + СРОК ДЕЙСТВИЯ 30 ДНЕЙ ==========
 local function SaveKeyInfo(key)
     local data = { key = key, activated = os.time() }
     writefile(KEY_INFO_FILE, HttpService:JSONEncode(data))
@@ -73,18 +85,6 @@ end
 
 local function ClearKeyInfo()
     if isfile(KEY_INFO_FILE) then delfile(KEY_INFO_FILE) end
-end
-
--- ========== СБРОС HWID (1 раз в 24 часа) ==========
-local function CanResetHWID()
-    if not isfile(RESET_LOG_FILE) then return true end
-    local lastReset = tonumber(readfile(RESET_LOG_FILE))
-    if not lastReset then return true end
-    return (os.time() - lastReset) >= 86400
-end
-
-local function LogReset()
-    writefile(RESET_LOG_FILE, tostring(os.time()))
 end
 
 -- ========== ПРОВЕРКА КЛЮЧА ==========
@@ -207,7 +207,7 @@ local SellItems = {
     ["Dio's Diary"] = true
 }
 
--- ========== GUI ==========
+-- ========== GUI (простой, человеческий) ==========
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SameHub"
 screenGui.Parent = CoreGui
@@ -306,7 +306,7 @@ task.spawn(function()
     end
 end)
 
--- ========== БАЙПАСЫ И ХУКИ ==========
+-- ========== БАЙПАСЫ ==========
 pcall(function()
     local FunctionLibrary = require(ReplicatedStorage:WaitForChild("Modules").FunctionLibrary)
     local OldPcall = FunctionLibrary.pcall
@@ -398,21 +398,12 @@ local function SetNoclip(Value)
 end
 
 local MaxItemAmounts = {
-    ["Gold Coin"] = 45,
-    ["Rokakaka"] = 25,
-    ["Pure Rokakaka"] = 10,
-    ["Mysterious Arrow"] = 25,
-    ["Diamond"] = 30,
-    ["Ancient Scroll"] = 10,
-    ["Caesar's Headband"] = 10,
-    ["Stone Mask"] = 10,
-    ["Rib Cage of The Saint's Corpse"] = 20,
-    ["Quinton's Glove"] = 10,
-    ["Zeppeli's Hat"] = 10,
-    ["Lucky Arrow"] = 10,
-    ["Clackers"] = 10,
-    ["Steel Ball"] = 10,
-    ["Dio's Diary"] = 10
+    ["Gold Coin"] = 45, ["Rokakaka"] = 25, ["Pure Rokakaka"] = 10,
+    ["Mysterious Arrow"] = 25, ["Diamond"] = 30, ["Ancient Scroll"] = 10,
+    ["Caesar's Headband"] = 10, ["Stone Mask"] = 10,
+    ["Rib Cage of The Saint's Corpse"] = 20, ["Quinton's Glove"] = 10,
+    ["Zeppeli's Hat"] = 10, ["Lucky Arrow"] = 10, ["Clackers"] = 10,
+    ["Steel Ball"] = 10, ["Dio's Diary"] = 10
 }
 if Has2x then
     for k, v in pairs(MaxItemAmounts) do MaxItemAmounts[k] = v * 2 end
@@ -457,7 +448,7 @@ local function ShouldStopFarming()
     return false
 end
 
--- ========== СЕРВЕР-ХОП ==========
+-- ========== СЕРВЕР-ХОП (рабочий) ==========
 local function ServerHop()
     local servers = {}
     local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
@@ -507,7 +498,6 @@ end
 
 -- ========== СКИП GUI И ЗАГРУЗКИ ==========
 task.wait(1)
-
 if not PlayerGui:FindFirstChild("HUD") then
     local HUD = ReplicatedStorage.Objects.HUD:Clone()
     HUD.Parent = PlayerGui
@@ -533,7 +523,6 @@ end)
 
 repeat task.wait() until GetCharacter() and GetCharacter("RemoteEvent")
 GetCharacter("RemoteEvent"):FireServer("PressedPlay")
-
 TeleportTo(CFrame.new(978, -42, -49))
 task.wait(1)
 
@@ -548,7 +537,7 @@ task.spawn(function()
     end)
 end)
 
--- ========== УДАЛЕНИЕ ТЕКСТУР КАРТЫ ==========
+-- ========== УДАЛЕНИЕ ТЕКСТУР ==========
 task.spawn(function()
     pcall(function()
         for _, v in pairs(workspace:GetDescendants()) do
@@ -574,9 +563,11 @@ end)
 
 task.wait(5)
 
--- ========== ОСНОВНОЙ ЦИКЛ ФАРМА С ТАЙМЕРОМ ХОПА ==========
+-- ========== ОСНОВНОЙ ЦИКЛ С ТАЙМЕРОМ ХОПА ==========
 local lastItemTime = tick()
 local NO_ITEMS_TIMEOUT = 20
+local cycleStartTime = tick()
+local maxCycleTime = 60
 
 local function SellItemNow(itemName)
     if AutoSell and SellItems[itemName] then
@@ -609,12 +600,15 @@ while true do
         repeat task.wait(5) until not ShouldStopFarming()
         statusLabel.Text = "Status: Farming"
         lastItemTime = tick()
+        cycleStartTime = tick()
     end
 
+    local collected = false
     for Index, ItemInfo in pairs(getgenv().SpawnedItems) do
         local HumanoidRootPart = GetCharacter("HumanoidRootPart")
         if HumanoidRootPart then
             if not HasMaxItem(ItemInfo.Name) then
+                collected = true
                 lastItemTime = tick()
                 local ProximityPrompt = ItemInfo.ProximityPrompt
                 local Position = ItemInfo.Position
@@ -639,14 +633,17 @@ while true do
 
     task.wait(3)
 
-    if tick() - lastItemTime > NO_ITEMS_TIMEOUT then
+    -- ХОП если 20 секунд нет предметов ИЛИ если цикл длится больше 60 секунд
+    if (tick() - lastItemTime > NO_ITEMS_TIMEOUT) or (tick() - cycleStartTime > maxCycleTime) then
         statusLabel.Text = "Status: No items, hopping"
         ServerHop()
         task.wait(10)
         lastItemTime = tick()
+        cycleStartTime = tick()
         statusLabel.Text = "Status: Farming"
     end
 
+    -- Автоселл (оставшиеся)
     if AutoSell then
         for Item, Sell in pairs(SellItems) do
             if Sell and Player.Backpack and Player.Backpack:FindFirstChild(Item) then
@@ -661,6 +658,7 @@ while true do
         end
     end
 
+    -- Покупка Lucky Arrows
     local Money = Player.PlayerStats.Money
     if BuyLucky and not HasLuckyArrows() then
         local attempts = 0
