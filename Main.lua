@@ -8,25 +8,14 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
 
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
--- ========== СОЗДАНИЕ ПАПОК ДЛЯ ПРЕДМЕТОВ (если их нет) ==========
-if not workspace:FindFirstChild("Item_Spawns") then
-    local folder = Instance.new("Folder", workspace)
-    folder.Name = "Item_Spawns"
-end
-if not workspace.Item_Spawns:FindFirstChild("Items") then
-    local folder = Instance.new("Folder", workspace.Item_Spawns)
-    folder.Name = "Items"
-end
-
 -- ========== КОНФИГУРАЦИЯ ==========
 local KEY_URL = "https://raw.githubusercontent.com/IsameeQ/SameHub/main/keys.txt"
 local HWID_FILE = "SameHub_HWID.txt"
-local KEY_INFO_FILE = "SameHub_KeyInfo.txt"
-local RESET_LOG_FILE = "SameHub_ResetLog.txt"
 
 -- ========== HWID ==========
 local function GetHWID()
@@ -60,44 +49,12 @@ local function ResetHWID()
     end
 end
 
--- ========== СБРОС HWID (1 раз в 24 часа) ==========
-local function CanResetHWID()
-    if not isfile(RESET_LOG_FILE) then return true end
-    local lastReset = tonumber(readfile(RESET_LOG_FILE))
-    if not lastReset then return true end
-    return (os.time() - lastReset) >= 86400
+if _G.SameHubReset then
+    ResetHWID()
+    _G.SameHubReset = nil
 end
 
-local function LogReset()
-    writefile(RESET_LOG_FILE, tostring(os.time()))
-end
-
--- ========== КЛЮЧ + СРОК ДЕЙСТВИЯ 30 ДНЕЙ ==========
-local function SaveKeyInfo(key)
-    local data = { key = key, activated = os.time() }
-    writefile(KEY_INFO_FILE, HttpService:JSONEncode(data))
-end
-
-local function LoadKeyInfo()
-    if isfile(KEY_INFO_FILE) then
-        local str = readfile(KEY_INFO_FILE)
-        local success, data = pcall(HttpService.JSONDecode, HttpService, str)
-        if success and data then return data end
-    end
-    return nil
-end
-
-local function IsKeyValid()
-    local info = LoadKeyInfo()
-    if not info then return false end
-    return (os.time() - info.activated) <= 30 * 86400
-end
-
-local function ClearKeyInfo()
-    if isfile(KEY_INFO_FILE) then delfile(KEY_INFO_FILE) end
-end
-
--- ========== ПРОВЕРКА КЛЮЧА ==========
+-- ========== ПРОВЕРКА КЛЮЧА (с повторными попытками) ==========
 local function CheckKey()
     local inputKey = ""
     local dialog = Instance.new("ScreenGui")
@@ -107,37 +64,40 @@ local function CheckKey()
     local title = Instance.new("TextLabel")
     dialog.Name = "KeyCheck"
     dialog.Parent = CoreGui
-    frame.Size = UDim2.new(0, 300, 0, 150)
-    frame.Position = UDim2.new(0.5, -150, 0.5, -75)
-    frame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    frame.Size = UDim2.new(0, 350, 0, 180)
+    frame.Position = UDim2.new(0.5, -175, 0.5, -90)
+    frame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
     frame.BorderSizePixel = 0
     frame.Parent = dialog
     local corner = Instance.new("UICorner", frame)
-    corner.CornerRadius = UDim.new(0, 8)
-    title.Size = UDim2.new(1, 0, 0, 35)
+    corner.CornerRadius = UDim.new(0, 12)
+    local stroke = Instance.new("UIStroke", frame)
+    stroke.Color = Color3.fromRGB(80, 80, 120)
+    stroke.Thickness = 1.5
+    title.Size = UDim2.new(1, 0, 0, 40)
     title.Position = UDim2.new(0, 0, 0, 0)
     title.BackgroundTransparency = 1
-    title.Text = "SameHub - Enter Key"
+    title.Text = "SameHub - Key Required"
     title.TextColor3 = Color3.fromRGB(255, 255, 255)
     title.Font = Enum.Font.GothamBold
-    title.TextSize = 16
+    title.TextSize = 18
     title.Parent = frame
-    textBox.Size = UDim2.new(0.8, 0, 0, 35)
+    textBox.Size = UDim2.new(0.8, 0, 0, 40)
     textBox.Position = UDim2.new(0.1, 0, 0.35, 0)
-    textBox.PlaceholderText = "Your key"
+    textBox.PlaceholderText = "Enter your key"
     textBox.Text = ""
-    textBox.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
+    textBox.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
     textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
     textBox.Font = Enum.Font.Gotham
-    textBox.TextSize = 14
+    textBox.TextSize = 16
     textBox.Parent = frame
-    button.Size = UDim2.new(0.4, 0, 0, 35)
+    button.Size = UDim2.new(0.4, 0, 0, 40)
     button.Position = UDim2.new(0.3, 0, 0.7, 0)
     button.Text = "Activate"
-    button.BackgroundColor3 = Color3.fromRGB(70, 70, 80)
+    button.BackgroundColor3 = Color3.fromRGB(70, 70, 200)
     button.TextColor3 = Color3.fromRGB(255, 255, 255)
     button.Font = Enum.Font.GothamBold
-    button.TextSize = 14
+    button.TextSize = 16
     button.Parent = frame
     local submitted = false
     button.MouseButton1Click:Connect(function()
@@ -156,8 +116,8 @@ local function CheckKey()
         task.wait(2)
     end
     if not keyList then
-        Player:Kick("Failed to load keys")
-        return
+        Player:Kick("Failed to load keys list")
+        error("No keys")
     end
     local isValid = false
     for line in keyList:gmatch("[^\r\n]+") do
@@ -168,12 +128,10 @@ local function CheckKey()
     end
     if not isValid then
         Player:Kick("Invalid Key!")
-        return
+        error("Invalid Key")
     end
-    SaveKeyInfo(inputKey)
 end
 
--- ========== ПРОВЕРКА HWID И КЛЮЧА ПРИ ЗАПУСКЕ ==========
 local currentHWID = GetHWID()
 local savedHWID = LoadHWID()
 
@@ -182,18 +140,7 @@ if savedHWID and savedHWID ~= currentHWID then
     error("HWID mismatch")
 elseif not savedHWID then
     CheckKey()
-    if not IsKeyValid() then
-        Player:Kick("Key expired (30 days). Purchase a new key.")
-        error("Key expired")
-    end
     SaveHWID(currentHWID)
-else
-    if not IsKeyValid() then
-        ResetHWID()
-        ClearKeyInfo()
-        Player:Kick("Key expired (30 days). Restart with a new key.")
-        error("Key expired")
-    end
 end
 
 -- ========== ОСНОВНЫЕ НАСТРОЙКИ ==========
@@ -218,105 +165,102 @@ local SellItems = {
 }
 
 -- ========== GUI ==========
+local guiEnabled = true
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SameHub"
 screenGui.Parent = CoreGui
 screenGui.ResetOnSpawn = false
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 260, 0, 280)
-mainFrame.Position = UDim2.new(0.02, 0, 0.5, -140)
-mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-mainFrame.BackgroundTransparency = 0.05
+mainFrame.Size = UDim2.new(0, 280, 0, 380)
+mainFrame.Position = UDim2.new(0.02, 0, 0.5, -190)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+mainFrame.BackgroundTransparency = 0.1
 mainFrame.BorderSizePixel = 0
 mainFrame.Parent = screenGui
-local corner = Instance.new("UICorner", mainFrame)
-corner.CornerRadius = UDim.new(0, 8)
+local mainCorner = Instance.new("UICorner", mainFrame)
+mainCorner.CornerRadius = UDim.new(0, 12)
+local mainStroke = Instance.new("UIStroke", mainFrame)
+mainStroke.Color = Color3.fromRGB(100, 100, 150)
+mainStroke.Thickness = 1.5
 
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0, 35)
+titleLabel.Size = UDim2.new(1, 0, 0, 40)
 titleLabel.Position = UDim2.new(0, 0, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SameHub"
+titleLabel.Text = "SameHub v2.0"
 titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextSize = 18
+titleLabel.TextSize = 20
 titleLabel.Parent = mainFrame
 
 local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, -20, 0, 25)
-statusLabel.Position = UDim2.new(0, 10, 0, 40)
+statusLabel.Size = UDim2.new(1, -20, 0, 30)
+statusLabel.Position = UDim2.new(0, 10, 0, 45)
 statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "Status: Farming"
+statusLabel.Text = "Status: Farming..."
 statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
 statusLabel.Font = Enum.Font.Gotham
-statusLabel.TextSize = 13
+statusLabel.TextSize = 14
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
 statusLabel.Parent = mainFrame
 
 local itemsLabel = Instance.new("TextLabel")
-itemsLabel.Size = UDim2.new(1, -20, 0, 25)
-itemsLabel.Position = UDim2.new(0, 10, 0, 70)
+itemsLabel.Size = UDim2.new(1, -20, 0, 30)
+itemsLabel.Position = UDim2.new(0, 10, 0, 80)
 itemsLabel.BackgroundTransparency = 1
 itemsLabel.Text = "Items: 0"
 itemsLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
 itemsLabel.Font = Enum.Font.Gotham
-itemsLabel.TextSize = 13
+itemsLabel.TextSize = 14
 itemsLabel.TextXAlignment = Enum.TextXAlignment.Left
 itemsLabel.Parent = mainFrame
 
 local hwidLabel = Instance.new("TextLabel")
-hwidLabel.Size = UDim2.new(1, -20, 0, 25)
-hwidLabel.Position = UDim2.new(0, 10, 0, 100)
+hwidLabel.Size = UDim2.new(1, -20, 0, 30)
+hwidLabel.Position = UDim2.new(0, 10, 0, 115)
 hwidLabel.BackgroundTransparency = 1
-hwidLabel.Text = "HWID: " .. string.sub(currentHWID, 1, 16) .. "..."
-hwidLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+hwidLabel.Text = "HWID: " .. string.sub(currentHWID, 1, 20) .. "..."
+hwidLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
 hwidLabel.Font = Enum.Font.Gotham
-hwidLabel.TextSize = 11
+hwidLabel.TextSize = 12
 hwidLabel.TextXAlignment = Enum.TextXAlignment.Left
 hwidLabel.Parent = mainFrame
 
-local resetButton = Instance.new("TextButton")
-resetButton.Size = UDim2.new(0.8, 0, 0, 30)
-resetButton.Position = UDim2.new(0.1, 0, 0, 140)
-resetButton.Text = "Reset HWID"
-resetButton.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-resetButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-resetButton.Font = Enum.Font.GothamBold
-resetButton.TextSize = 13
-resetButton.Parent = mainFrame
-resetButton.MouseButton1Click:Connect(function()
-    if not CanResetHWID() then
-        statusLabel.Text = "Status: Reset only once per 24h"
-        task.wait(2)
-        statusLabel.Text = "Status: Farming"
-        return
-    end
+local resetHWIDButton = Instance.new("TextButton")
+resetHWIDButton.Size = UDim2.new(0.8, 0, 0, 35)
+resetHWIDButton.Position = UDim2.new(0.1, 0, 0, 160)
+resetHWIDButton.Text = "Reset HWID"
+resetHWIDButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+resetHWIDButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+resetHWIDButton.Font = Enum.Font.GothamBold
+resetHWIDButton.TextSize = 14
+resetHWIDButton.Parent = mainFrame
+resetHWIDButton.MouseButton1Click:Connect(function()
     ResetHWID()
-    ClearKeyInfo()
-    LogReset()
-    Player:Kick("HWID reset. Restart script with a key.")
+    Player:Kick("HWID reset. Restart script.")
 end)
 
+local itemCount = 0
 local function UpdateGUI()
     pcall(function()
-        local count = 0
+        itemCount = 0
         for _, tool in pairs(Player.Backpack:GetChildren()) do
             if SellItems[tool.Name] then
-                count = count + 1
+                itemCount = itemCount + 1
             end
         end
-        itemsLabel.Text = "Items to sell: " .. count
+        itemsLabel.Text = "Items to sell: " .. itemCount
     end)
 end
 task.spawn(function()
-    while true do
+    while guiEnabled do
         UpdateGUI()
         task.wait(2)
     end
 end)
 
--- ========== БАЙПАСЫ ==========
+-- ========== БАЙПАСЫ И ХУКИ ==========
 pcall(function()
     local FunctionLibrary = require(ReplicatedStorage:WaitForChild("Modules").FunctionLibrary)
     local OldPcall = FunctionLibrary.pcall
@@ -361,13 +305,13 @@ oldNc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
 end))
 
 -- ========== ПАПКА ПРЕДМЕТОВ ==========
-local ItemSpawnFolder = workspace:FindFirstChild("Item_Spawns")
-if ItemSpawnFolder then
-    ItemSpawnFolder = ItemSpawnFolder:FindFirstChild("Items")
-end
+local ItemSpawnFolder
+pcall(function()
+    ItemSpawnFolder = Workspace:WaitForChild("Item_Spawns", 10):WaitForChild("Items", 10)
+end)
 if not ItemSpawnFolder then
     task.wait(5)
-    ItemSpawnFolder = workspace:FindFirstChild("Item_Spawns")
+    ItemSpawnFolder = Workspace:FindFirstChild("Item_Spawns")
     if ItemSpawnFolder then ItemSpawnFolder = ItemSpawnFolder:FindFirstChild("Items") end
 end
 
@@ -408,12 +352,21 @@ local function SetNoclip(Value)
 end
 
 local MaxItemAmounts = {
-    ["Gold Coin"] = 45, ["Rokakaka"] = 25, ["Pure Rokakaka"] = 10,
-    ["Mysterious Arrow"] = 25, ["Diamond"] = 30, ["Ancient Scroll"] = 10,
-    ["Caesar's Headband"] = 10, ["Stone Mask"] = 10,
-    ["Rib Cage of The Saint's Corpse"] = 20, ["Quinton's Glove"] = 10,
-    ["Zeppeli's Hat"] = 10, ["Lucky Arrow"] = 10, ["Clackers"] = 10,
-    ["Steel Ball"] = 10, ["Dio's Diary"] = 10
+    ["Gold Coin"] = 45,
+    ["Rokakaka"] = 25,
+    ["Pure Rokakaka"] = 10,
+    ["Mysterious Arrow"] = 25,
+    ["Diamond"] = 30,
+    ["Ancient Scroll"] = 10,
+    ["Caesar's Headband"] = 10,
+    ["Stone Mask"] = 10,
+    ["Rib Cage of The Saint's Corpse"] = 20,
+    ["Quinton's Glove"] = 10,
+    ["Zeppeli's Hat"] = 10,
+    ["Lucky Arrow"] = 10,
+    ["Clackers"] = 10,
+    ["Steel Ball"] = 10,
+    ["Dio's Diary"] = 10
 }
 if Has2x then
     for k, v in pairs(MaxItemAmounts) do MaxItemAmounts[k] = v * 2 end
@@ -444,11 +397,14 @@ local function HasLuckyArrows() return CountLuckyArrows() >= 10 end
 local function IsMoneyMaxed() return Player.PlayerStats.Money.Value >= 1000000 end
 
 local function AllKeepItemsFull()
+    local hasAnyKeepItem = false
     for Item, Sell in pairs(SellItems) do
         if not Sell and Item ~= "Lucky Arrow" then
+            hasAnyKeepItem = true
             if not HasMaxItem(Item) then return false end
         end
     end
+    if not hasAnyKeepItem then return false end
     return true
 end
 
@@ -458,7 +414,7 @@ local function ShouldStopFarming()
     return false
 end
 
--- ========== СЕРВЕР-ХОП ==========
+-- ========== СЕРВЕР-ХОП (рабочий) ==========
 local function ServerHop()
     local servers = {}
     local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
@@ -495,14 +451,6 @@ end
 
 getgenv().SpawnedItems = {}
 if ItemSpawnFolder then
-    -- сканируем уже существующие предметы
-    for _, model in pairs(ItemSpawnFolder:GetChildren()) do
-        local info = GetItemInfo(model)
-        if info then
-            getgenv().SpawnedItems[model] = info
-        end
-    end
-    -- отслеживаем новые
     ItemSpawnFolder.ChildAdded:Connect(function(Model)
         task.wait(1)
         if Model:IsA("Model") then
@@ -516,6 +464,7 @@ end
 
 -- ========== СКИП GUI И ЗАГРУЗКИ ==========
 task.wait(1)
+
 if not PlayerGui:FindFirstChild("HUD") then
     local HUD = ReplicatedStorage.Objects.HUD:Clone()
     HUD.Parent = PlayerGui
@@ -541,6 +490,7 @@ end)
 
 repeat task.wait() until GetCharacter() and GetCharacter("RemoteEvent")
 GetCharacter("RemoteEvent"):FireServer("PressedPlay")
+
 TeleportTo(CFrame.new(978, -42, -49))
 task.wait(1)
 
@@ -555,8 +505,8 @@ task.spawn(function()
     end)
 end)
 
--- ========== УДАЛЕНИЕ ТЕКСТУР ==========
-task.spawn(function()
+-- ========== УДАЛЕНИЕ ТЕКСТУР КАРТЫ ==========
+local function DestroyMapTextures()
     pcall(function()
         for _, v in pairs(workspace:GetDescendants()) do
             if v:IsA("BasePart") and not v:IsDescendantOf(workspace.IgnoreInstances) then
@@ -577,15 +527,14 @@ task.spawn(function()
             end
         end
     end)
-end)
+end
+task.spawn(DestroyMapTextures)
 
 task.wait(5)
 
--- ========== ОСНОВНОЙ ЦИКЛ ФАРМА ==========
+-- ========== ОСНОВНОЙ ЦИКЛ ФАРМА С ТАЙМЕРОМ ХОПА ==========
 local lastItemTime = tick()
 local NO_ITEMS_TIMEOUT = 20
-local cycleStartTime = tick()
-local maxCycleTime = 60
 
 local function SellItemNow(itemName)
     if AutoSell and SellItems[itemName] then
@@ -614,19 +563,18 @@ end)
 
 while true do
     if ShouldStopFarming() then
-        statusLabel.Text = "Status: Waiting (max)"
+        statusLabel.Text = "Status: Waiting (max items)"
         repeat task.wait(5) until not ShouldStopFarming()
-        statusLabel.Text = "Status: Farming"
+        statusLabel.Text = "Status: Farming..."
         lastItemTime = tick()
-        cycleStartTime = tick()
     end
 
-    local collected = false
+    local itemsCollected = false
     for Index, ItemInfo in pairs(getgenv().SpawnedItems) do
         local HumanoidRootPart = GetCharacter("HumanoidRootPart")
         if HumanoidRootPart then
             if not HasMaxItem(ItemInfo.Name) then
-                collected = true
+                itemsCollected = true
                 lastItemTime = tick()
                 local ProximityPrompt = ItemInfo.ProximityPrompt
                 local Position = ItemInfo.Position
@@ -651,17 +599,16 @@ while true do
 
     task.wait(3)
 
-    -- ХОП если 20 секунд нет предметов ИЛИ цикл длится > 60 секунд
-    if (tick() - lastItemTime > NO_ITEMS_TIMEOUT) or (tick() - cycleStartTime > maxCycleTime) then
-        statusLabel.Text = "Status: No items, hopping"
+    -- Проверка на отсутствие предметов 20 секунд
+    if tick() - lastItemTime > NO_ITEMS_TIMEOUT then
+        statusLabel.Text = "Status: No items, hopping..."
         ServerHop()
         task.wait(10)
         lastItemTime = tick()
-        cycleStartTime = tick()
-        statusLabel.Text = "Status: Farming"
+        statusLabel.Text = "Status: Farming..."
     end
 
-    -- Автоселл оставшихся предметов (если что-то не продалось через ChildAdded)
+    -- Автоселл оставшихся предметов
     if AutoSell then
         for Item, Sell in pairs(SellItems) do
             if Sell and Player.Backpack and Player.Backpack:FindFirstChild(Item) then
@@ -679,13 +626,13 @@ while true do
     -- Покупка Lucky Arrows
     local Money = Player.PlayerStats.Money
     if BuyLucky and not HasLuckyArrows() then
-        local attempts = 0
-        while Money.Value >= 75000 and attempts < 15 do
+        local purchaseAttempts = 0
+        while Money.Value >= 75000 and purchaseAttempts < 15 do
             Player.Character.RemoteEvent:FireServer("PurchaseShopItem", { ItemName = "1x Lucky Arrow" })
             task.wait(1)
-            attempts = attempts + 1
+            purchaseAttempts = purchaseAttempts + 1
             if CountLuckyArrows() >= 10 then break end
-            if attempts > 3 and CountLuckyArrows() == 9 then break end
+            if purchaseAttempts > 3 and CountLuckyArrows() == 9 then break end
         end
     end
 
