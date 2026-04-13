@@ -12,7 +12,7 @@ local CoreGui = game:GetService("CoreGui")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
--- ========== СОЗДАНИЕ ПАПОК ДЛЯ ПРЕДМЕТОВ (если их нет) ==========
+-- ========== СОЗДАНИЕ ПАПОК ДЛЯ ПРЕДМЕТОВ ==========
 if not workspace:FindFirstChild("Item_Spawns") then
     local folder = Instance.new("Folder", workspace)
     folder.Name = "Item_Spawns"
@@ -22,12 +22,11 @@ if not workspace.Item_Spawns:FindFirstChild("Items") then
     folder.Name = "Items"
 end
 
--- ========== КОНФИГУРАЦИЯ ==========
+-- ========== HWID И КЛЮЧ ==========
 local KEY_URL = "https://raw.githubusercontent.com/IsameeQ/SameHub/main/keys.txt"
 local HWID_FILE = "SameHub_HWID.txt"
 local KEY_INFO_FILE = "SameHub_KeyInfo.txt"
 
--- ========== HWID ==========
 local function GetHWID()
     local executor = identifyexecutor and identifyexecutor() or "Unknown"
     local userId = Player.UserId
@@ -54,21 +53,16 @@ local function LoadHWID()
 end
 
 local function ResetHWID()
-    if isfile(HWID_FILE) then
-        delfile(HWID_FILE)
-    end
+    if isfile(HWID_FILE) then delfile(HWID_FILE) end
 end
 
--- ========== КЛЮЧ + СРОК ДЕЙСТВИЯ 30 ДНЕЙ ==========
 local function SaveKeyInfo(key)
-    local data = { key = key, activated = os.time() }
-    writefile(KEY_INFO_FILE, HttpService:JSONEncode(data))
+    writefile(KEY_INFO_FILE, HttpService:JSONEncode({ key = key, activated = os.time() }))
 end
 
 local function LoadKeyInfo()
     if isfile(KEY_INFO_FILE) then
-        local str = readfile(KEY_INFO_FILE)
-        local success, data = pcall(HttpService.JSONDecode, HttpService, str)
+        local success, data = pcall(HttpService.JSONDecode, HttpService, readfile(KEY_INFO_FILE))
         if success and data then return data end
     end
     return nil
@@ -84,7 +78,6 @@ local function ClearKeyInfo()
     if isfile(KEY_INFO_FILE) then delfile(KEY_INFO_FILE) end
 end
 
--- ========== ПРОВЕРКА КЛЮЧА ==========
 local function CheckKey()
     local inputKey = ""
     local dialog = Instance.new("ScreenGui")
@@ -148,10 +141,7 @@ local function CheckKey()
     end
     local isValid = false
     for line in keyList:gmatch("[^\r\n]+") do
-        if line == inputKey then
-            isValid = true
-            break
-        end
+        if line == inputKey then isValid = true; break end
     end
     if not isValid then
         Player:Kick("Invalid Key!")
@@ -160,18 +150,15 @@ local function CheckKey()
     SaveKeyInfo(inputKey)
 end
 
--- ========== ПРОВЕРКА HWID И КЛЮЧА ПРИ ЗАПУСКЕ ==========
 local currentHWID = GetHWID()
 local savedHWID = LoadHWID()
 
 if savedHWID and savedHWID ~= currentHWID then
     Player:Kick("HWID mismatch!")
-    error("HWID mismatch")
 elseif not savedHWID then
     CheckKey()
     if not IsKeyValid() then
         Player:Kick("Key expired (30 days). Purchase a new key.")
-        error("Key expired")
     end
     SaveHWID(currentHWID)
 else
@@ -179,29 +166,19 @@ else
         ResetHWID()
         ClearKeyInfo()
         Player:Kick("Key expired (30 days). Restart with a new key.")
-        error("Key expired")
     end
 end
 
--- ========== ОСНОВНЫЕ НАСТРОЙКИ ==========
+-- ========== НАСТРОЙКИ ==========
 local BuyLucky = true
 local AutoSell = true
 local SellItems = {
-    ["Gold Coin"] = true,
-    ["Rokakaka"] = true,
-    ["Pure Rokakaka"] = true,
-    ["Mysterious Arrow"] = true,
-    ["Diamond"] = true,
-    ["Ancient Scroll"] = true,
-    ["Caesar's Headband"] = true,
-    ["Stone Mask"] = true,
-    ["Rib Cage of The Saint's Corpse"] = true,
-    ["Quinton's Glove"] = true,
-    ["Zeppeli's Hat"] = true,
-    ["Lucky Arrow"] = false,
-    ["Clackers"] = true,
-    ["Steel Ball"] = true,
-    ["Dio's Diary"] = true
+    ["Gold Coin"] = true, ["Rokakaka"] = true, ["Pure Rokakaka"] = true,
+    ["Mysterious Arrow"] = true, ["Diamond"] = true, ["Ancient Scroll"] = true,
+    ["Caesar's Headband"] = true, ["Stone Mask"] = true,
+    ["Rib Cage of The Saint's Corpse"] = true, ["Quinton's Glove"] = true,
+    ["Zeppeli's Hat"] = true, ["Lucky Arrow"] = false, ["Clackers"] = true,
+    ["Steel Ball"] = true, ["Dio's Diary"] = true
 }
 
 -- ========== GUI ==========
@@ -282,9 +259,7 @@ local function UpdateGUI()
     pcall(function()
         local count = 0
         for _, tool in pairs(Player.Backpack:GetChildren()) do
-            if SellItems[tool.Name] then
-                count = count + 1
-            end
+            if SellItems[tool.Name] then count = count + 1 end
         end
         itemsLabel.Text = "Items to sell: " .. count
     end)
@@ -320,7 +295,6 @@ end)
 
 local Has2x = MarketplaceService:UserOwnsGamePassAsync(Player.UserId, 14597778)
 
-local oldMagnitude
 pcall(function()
     oldMagnitude = hookmetamethod(Vector3.new(), "__index", newcclosure(function(self, index)
         local CallingScript = tostring(getcallingscript())
@@ -399,7 +373,6 @@ if Has2x then
     for k, v in pairs(MaxItemAmounts) do MaxItemAmounts[k] = v * 2 end
 end
 
--- Исправленная HasMaxItem (учитывает экипированные предметы)
 local function HasMaxItem(Item)
     local Count = 0
     for _, Tool in pairs(Player.Backpack:GetChildren()) do
@@ -429,7 +402,6 @@ end
 local function HasLuckyArrows() return CountLuckyArrows() >= 10 end
 local function IsMoneyMaxed() return Player.PlayerStats.Money.Value >= 1000000 end
 
--- Исправленная AllKeepItemsFull (с проверкой hasAnyKeepItem)
 local function AllKeepItemsFull()
     local hasAnyKeepItem = false
     for Item, Sell in pairs(SellItems) do
@@ -448,7 +420,7 @@ local function ShouldStopFarming()
     return false
 end
 
--- ========== СЕРВЕР-ХОП (рабочий) ==========
+-- ========== СЕРВЕР-ХОП (10 СЕКУНД БЕЗ ПРЕДМЕТОВ НА КАРТЕ) ==========
 local function ServerHop()
     local servers = {}
     local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
@@ -465,11 +437,11 @@ local function ServerHop()
     end
 end
 
--- Отдельный поток для проверки наличия предметов на карте
+-- Отдельный поток: проверка каждые 2 секунды, если 10 секунд нет предметов — хоп
 task.spawn(function()
     local timeWithNoItems = 0
-    local checkInterval = 5
-    local maxEmptyTime = 20
+    local checkInterval = 2
+    local maxEmptyTime = 10
     while true do
         task.wait(checkInterval)
         if ItemSpawnFolder then
@@ -512,17 +484,13 @@ getgenv().SpawnedItems = {}
 if ItemSpawnFolder then
     for _, model in pairs(ItemSpawnFolder:GetChildren()) do
         local info = GetItemInfo(model)
-        if info then
-            getgenv().SpawnedItems[model] = info
-        end
+        if info then getgenv().SpawnedItems[model] = info end
     end
     ItemSpawnFolder.ChildAdded:Connect(function(Model)
         task.wait(1)
         if Model:IsA("Model") then
-            local ItemInfo = GetItemInfo(Model)
-            if ItemInfo then
-                getgenv().SpawnedItems[Model] = ItemInfo
-            end
+            local info = GetItemInfo(Model)
+            if info then getgenv().SpawnedItems[Model] = info end
         end
     end)
 end
@@ -633,12 +601,10 @@ while true do
         cycleStartTime = tick()
     end
 
-    local collected = false
     for Index, ItemInfo in pairs(getgenv().SpawnedItems) do
         local HumanoidRootPart = GetCharacter("HumanoidRootPart")
         if HumanoidRootPart then
             if not HasMaxItem(ItemInfo.Name) then
-                collected = true
                 lastPickupTime = tick()
                 local ProximityPrompt = ItemInfo.ProximityPrompt
                 local Position = ItemInfo.Position
@@ -663,7 +629,6 @@ while true do
 
     task.wait(3)
 
-    -- Хоп при отсутствии подбора или зависании цикла
     if (tick() - lastPickupTime > 25) or (tick() - cycleStartTime > maxCycleTime) then
         statusLabel.Text = "Status: No pickup or timeout, hopping"
         ServerHop()
@@ -673,7 +638,6 @@ while true do
         statusLabel.Text = "Status: Farming"
     end
 
-    -- Автоселл оставшихся предметов
     if AutoSell then
         for Item, Sell in pairs(SellItems) do
             if Sell and Player.Backpack and Player.Backpack:FindFirstChild(Item) then
@@ -688,7 +652,6 @@ while true do
         end
     end
 
-    -- Покупка Lucky Arrows
     local Money = Player.PlayerStats.Money
     if BuyLucky and not HasLuckyArrows() then
         local attempts = 0
