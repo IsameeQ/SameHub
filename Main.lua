@@ -464,7 +464,7 @@ local function CountLuckyArrows()
     return count
 end
 
--- ========== СЕРВЕР-ХОП (3 СЕКУНДЫ БЕЗ ПРЕДМЕТОВ НА КАРТЕ) ==========
+-- ========== СЕРВЕР-ХОП (3 СЕКУНДЫ БЕЗ ПРЕДМЕТОВ) ==========
 local function ServerHop()
     local servers = {}
     local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
@@ -483,24 +483,22 @@ end
 
 -- Отдельный поток: проверка каждую секунду, если 3 секунды нет предметов — хоп
 task.spawn(function()
-    local timeWithNoItems = 0
-    local checkInterval = 1
-    local maxEmptyTime = 3
+    local noItemTimer = 0
     while true do
-        task.wait(checkInterval)
+        task.wait(1)
         if ItemSpawnFolder then
-            local currentItems = #ItemSpawnFolder:GetChildren()
-            if currentItems == 0 then
-                timeWithNoItems = timeWithNoItems + checkInterval
+            local items = ItemSpawnFolder:GetChildren()
+            if #items == 0 then
+                noItemTimer = noItemTimer + 1
+                if noItemTimer >= 3 then
+                    statusLabel.Text = "Status: No items, hopping"
+                    ServerHop()
+                    task.wait(10)
+                    noItemTimer = 0
+                    statusLabel.Text = "Status: Farming"
+                end
             else
-                timeWithNoItems = 0
-            end
-            if timeWithNoItems >= maxEmptyTime then
-                statusLabel.Text = "Status: No items on map, hopping"
-                ServerHop()
-                task.wait(10)
-                timeWithNoItems = 0
-                statusLabel.Text = "Status: Farming"
+                noItemTimer = 0
             end
         end
     end
