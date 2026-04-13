@@ -202,7 +202,7 @@ local SellItems = {
     ["Steel Ball"] = true, ["Dio's Diary"] = true
 }
 
--- ========== GUI (перетаскиваемое, с днями подписки) ==========
+-- ========== GUI ==========
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SameHub"
 screenGui.Parent = CoreGui
@@ -228,7 +228,6 @@ titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 18
 titleLabel.Parent = mainFrame
 
--- Перетаскивание окна
 local dragging = false
 local dragStart
 local frameStart
@@ -379,15 +378,19 @@ oldNc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     return oldNc(self, ...)
 end))
 
--- ========== ПАПКА ПРЕДМЕТОВ ==========
-local ItemSpawnFolder = workspace:FindFirstChild("Item_Spawns")
-if ItemSpawnFolder then
-    ItemSpawnFolder = ItemSpawnFolder:FindFirstChild("Items")
+-- ========== ПАПКА ПРЕДМЕТОВ (ПОСТОЯННО ОБНОВЛЯЕМАЯ) ==========
+local function GetItemSpawnFolder()
+    local itemSpawns = workspace:FindFirstChild("Item_Spawns")
+    if itemSpawns then
+        return itemSpawns:FindFirstChild("Items")
+    end
+    return nil
 end
+
+local ItemSpawnFolder = GetItemSpawnFolder()
 if not ItemSpawnFolder then
     task.wait(5)
-    ItemSpawnFolder = workspace:FindFirstChild("Item_Spawns")
-    if ItemSpawnFolder then ItemSpawnFolder = ItemSpawnFolder:FindFirstChild("Items") end
+    ItemSpawnFolder = GetItemSpawnFolder()
 end
 
 -- ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
@@ -426,31 +429,6 @@ local function SetNoclip(Value)
     end
 end
 
-local MaxItemAmounts = {
-    ["Gold Coin"] = 45, ["Rokakaka"] = 25, ["Pure Rokakaka"] = 10,
-    ["Mysterious Arrow"] = 25, ["Diamond"] = 30, ["Ancient Scroll"] = 10,
-    ["Caesar's Headband"] = 10, ["Stone Mask"] = 10,
-    ["Rib Cage of The Saint's Corpse"] = 20, ["Quinton's Glove"] = 10,
-    ["Zeppeli's Hat"] = 10, ["Lucky Arrow"] = 10, ["Clackers"] = 10,
-    ["Steel Ball"] = 10, ["Dio's Diary"] = 10
-}
-if Has2x then
-    for k, v in pairs(MaxItemAmounts) do MaxItemAmounts[k] = v * 2 end
-end
-
-local function HasMaxItem(Item)
-    local Count = 0
-    for _, Tool in pairs(Player.Backpack:GetChildren()) do
-        if Tool.Name == Item then Count += 1 end
-    end
-    if Player.Character then
-        for _, Tool in pairs(Player.Character:GetChildren()) do
-            if Tool:IsA("Tool") and Tool.Name == Item then Count += 1 end
-        end
-    end
-    return MaxItemAmounts[Item] and Count >= MaxItemAmounts[Item] or false
-end
-
 local function CountLuckyArrows()
     local count = 0
     for _, Tool in ipairs(Player.Backpack:GetChildren()) do
@@ -464,7 +442,7 @@ local function CountLuckyArrows()
     return count
 end
 
--- ========== СЕРВЕР-ХОП (3 СЕКУНДЫ БЕЗ ПРЕДМЕТОВ НА КАРТЕ) ==========
+-- ========== СЕРВЕР-ХОП (НАДЁЖНЫЙ ПОТОК) ==========
 local function ServerHop()
     local servers = {}
     local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
@@ -481,27 +459,31 @@ local function ServerHop()
     end
 end
 
--- Отдельный поток: проверка каждую секунду, если 3 секунды нет предметов — хоп
+-- Постоянный мониторинг предметов на карте
 task.spawn(function()
-    local timeWithNoItems = 0
-    local checkInterval = 1
-    local maxEmptyTime = 3
+    local noItemTimer = 0
     while true do
-        task.wait(checkInterval)
-        if ItemSpawnFolder then
-            local currentItems = #ItemSpawnFolder:GetChildren()
-            if currentItems == 0 then
-                timeWithNoItems = timeWithNoItems + checkInterval
+        task.wait(1)
+        local folder = GetItemSpawnFolder()
+        if folder then
+            local itemCount = #folder:GetChildren()
+            if itemCount == 0 then
+                noItemTimer = noItemTimer + 1
+                if noItemTimer >= 3 then
+                    statusLabel.Text = "Status: No items, hopping"
+                    ServerHop()
+                    task.wait(10)
+                    noItemTimer = 0
+                    statusLabel.Text = "Status: Farming"
+                end
             else
-                timeWithNoItems = 0
+                noItemTimer = 0
             end
-            if timeWithNoItems >= maxEmptyTime then
-                statusLabel.Text = "Status: No items on map, hopping"
-                ServerHop()
-                task.wait(10)
-                timeWithNoItems = 0
-                statusLabel.Text = "Status: Farming"
-            end
+        else
+            -- Если папка пропала, ждём 5 секунд и хоп
+            statusLabel.Text = "Status: Items folder lost, hopping"
+            ServerHop()
+            task.wait(10)
         end
     end
 end)
@@ -525,19 +507,45 @@ local function GetItemInfo(Model)
 end
 
 getgenv().SpawnedItems = {}
-if ItemSpawnFolder then
-    for _, model in pairs(ItemSpawnFolder:GetChildren()) do
-        local info = GetItemInfo(model)
-        if info then getgenv().SpawnedItems[model] = info end
-    end
-    ItemSpawnFolder.ChildAdded:Connect(function(Model)
-        task.wait(1)
-        if Model:IsA("Model") then
-            local info = GetItemInfo(Model)
-            if info then getgenv().SpawnedItems[Model] = info end
+local function RefreshItemList()
+    local folder = GetItemSpawnFolder()
+    if folder then
+        for _, model in pairs(folder:GetChildren()) do
+            if not getgenv().SpawnedItems[model] then
+                local info = GetItemInfo(model)
+                if info then
+                    getgenv().SpawnedItems[model] = info
+                end
+            end
         end
-    end)
+    end
 end
+
+-- Первоначальное сканирование
+RefreshItemList()
+
+-- Отслеживание новых предметов
+local function OnItemAdded(Model)
+    task.wait(0.5)
+    if Model:IsA("Model") then
+        local info = GetItemInfo(Model)
+        if info then
+            getgenv().SpawnedItems[Model] = info
+        end
+    end
+end
+
+-- Наблюдаем за папкой (если она появится позже)
+task.spawn(function()
+    while true do
+        local folder = GetItemSpawnFolder()
+        if folder then
+            folder.ChildAdded:Connect(OnItemAdded)
+            break
+        end
+        task.wait(2)
+    end
+end)
 
 -- ========== СКИП GUI И ЗАГРУЗКИ ==========
 task.wait(1)
@@ -606,7 +614,7 @@ end)
 
 task.wait(5)
 
--- ========== ОСНОВНОЙ ЦИКЛ ФАРМА (БЕЗ ОСТАНОВКИ) ==========
+-- ========== ОСНОВНОЙ ЦИКЛ ФАРМА (БЕЗ ЛИМИТОВ) ==========
 local function SellItemNow(itemName)
     if AutoSell and SellItems[itemName] then
         local tool = Player.Backpack:FindFirstChild(itemName)
@@ -632,36 +640,40 @@ Player.Backpack.ChildAdded:Connect(function(tool)
     end
 end)
 
+-- Периодическое обновление списка предметов (на случай, если ChildAdded пропустил)
+task.spawn(function()
+    while true do
+        task.wait(10)
+        RefreshItemList()
+    end
+end)
+
 while true do
-    -- Собираем предметы
+    -- Собираем ВСЕ предметы, которые есть в списке (без проверки лимитов)
     for Index, ItemInfo in pairs(getgenv().SpawnedItems) do
         local HumanoidRootPart = GetCharacter("HumanoidRootPart")
         if HumanoidRootPart then
-            if not HasMaxItem(ItemInfo.Name) then
-                local ProximityPrompt = ItemInfo.ProximityPrompt
-                local Position = ItemInfo.Position
-                getgenv().SpawnedItems[Index] = nil
-                local BodyVelocity = Instance.new("BodyVelocity")
-                BodyVelocity.Parent = HumanoidRootPart
-                BodyVelocity.Velocity = Vector3.new(0, 0, 0)
-                SetNoclip(true)
-                TeleportTo(CFrame.new(Position.X, Position.Y - 25, Position.Z))
-                task.wait(0.5)
-                fireproximityprompt(ProximityPrompt)
-                task.wait(0.5)
-                BodyVelocity:Destroy()
-                TeleportTo(CFrame.new(978, -42, -49))
-                task.wait(0.3)
-                SetNoclip(false)
-            else
-                getgenv().SpawnedItems[Index] = nil
-            end
+            local ProximityPrompt = ItemInfo.ProximityPrompt
+            local Position = ItemInfo.Position
+            getgenv().SpawnedItems[Index] = nil
+            local BodyVelocity = Instance.new("BodyVelocity")
+            BodyVelocity.Parent = HumanoidRootPart
+            BodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            SetNoclip(true)
+            TeleportTo(CFrame.new(Position.X, Position.Y - 25, Position.Z))
+            task.wait(0.5)
+            fireproximityprompt(ProximityPrompt)
+            task.wait(0.5)
+            BodyVelocity:Destroy()
+            TeleportTo(CFrame.new(978, -42, -49))
+            task.wait(0.3)
+            SetNoclip(false)
         end
     end
 
     task.wait(3)
 
-    -- Автоселл оставшихся предметов
+    -- Автоселл
     if AutoSell then
         for Item, Sell in pairs(SellItems) do
             if Sell and Player.Backpack and Player.Backpack:FindFirstChild(Item) then
