@@ -13,17 +13,27 @@ local UserInputService = game:GetService("UserInputService")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
--- ========== СОЗДАНИЕ ПАПОК ДЛЯ ПРЕДМЕТОВ ==========
-if not workspace:FindFirstChild("Item_Spawns") then
-    local folder = Instance.new("Folder", workspace)
-    folder.Name = "Item_Spawns"
-end
-if not workspace.Item_Spawns:FindFirstChild("Items") then
-    local folder = Instance.new("Folder", workspace.Item_Spawns)
-    folder.Name = "Items"
+-- ========== ПРОВЕРКА ПАПКИ ПРЕДМЕТОВ (с диагностикой) ==========
+local function EnsureItemFolders()
+    local itemSpawns = workspace:FindFirstChild("Item_Spawns")
+    if not itemSpawns then
+        print("[SameHub] Creating Item_Spawns folder")
+        itemSpawns = Instance.new("Folder", workspace)
+        itemSpawns.Name = "Item_Spawns"
+    end
+    local itemsFolder = itemSpawns:FindFirstChild("Items")
+    if not itemsFolder then
+        print("[SameHub] Creating Items folder")
+        itemsFolder = Instance.new("Folder", itemSpawns)
+        itemsFolder.Name = "Items"
+    end
+    return itemsFolder
 end
 
--- ========== HWID И КЛЮЧ ==========
+local ItemsFolder = EnsureItemFolders()
+print("[SameHub] Items folder found/created at:", ItemsFolder:GetFullName())
+
+-- ========== HWID И КЛЮЧ (сокращённо, без изменений) ==========
 local KEY_URL = "https://raw.githubusercontent.com/IsameeQ/SameHub/main/keys.txt"
 local HWID_FILE = "SameHub_HWID.txt"
 local KEY_INFO_FILE = "SameHub_KeyInfo.txt"
@@ -43,36 +53,19 @@ local function GetHWID()
     return string.format("%s|%s|%s", executor, userId, hwid_raw)
 end
 
-local function SaveHWID(hwid)
-    writefile(HWID_FILE, hwid)
-end
-
-local function LoadHWID()
-    if isfile(HWID_FILE) then
-        return readfile(HWID_FILE)
-    end
-    return nil
-end
-
-local function ResetHWID()
-    if isfile(HWID_FILE) then delfile(HWID_FILE) end
-end
-
+local function SaveHWID(hwid) writefile(HWID_FILE, hwid) end
+local function LoadHWID() return isfile(HWID_FILE) and readfile(HWID_FILE) or nil end
+local function ResetHWID() if isfile(HWID_FILE) then delfile(HWID_FILE) end end
 local function CanResetHWID()
     if not isfile(RESET_LOG_FILE) then return true end
     local lastReset = tonumber(readfile(RESET_LOG_FILE))
-    if not lastReset then return true end
-    return (os.time() - lastReset) >= 86400
+    return not lastReset or (os.time() - lastReset) >= 86400
 end
-
-local function LogReset()
-    writefile(RESET_LOG_FILE, tostring(os.time()))
-end
+local function LogReset() writefile(RESET_LOG_FILE, tostring(os.time())) end
 
 local function SaveKeyInfo(key)
     writefile(KEY_INFO_FILE, HttpService:JSONEncode({ key = key, activated = os.time() }))
 end
-
 local function LoadKeyInfo()
     if isfile(KEY_INFO_FILE) then
         local success, data = pcall(HttpService.JSONDecode, HttpService, readfile(KEY_INFO_FILE))
@@ -80,24 +73,17 @@ local function LoadKeyInfo()
     end
     return nil
 end
-
 local function GetDaysLeft()
     local info = LoadKeyInfo()
     if not info then return 0 end
-    local daysPassed = (os.time() - info.activated) / 86400
-    local left = 30 - daysPassed
+    local left = 30 - (os.time() - info.activated) / 86400
     return left > 0 and math.floor(left) or 0
 end
-
 local function IsKeyValid()
     local info = LoadKeyInfo()
-    if not info then return false end
-    return (os.time() - info.activated) <= 30 * 86400
+    return info and (os.time() - info.activated) <= 30 * 86400
 end
-
-local function ClearKeyInfo()
-    if isfile(KEY_INFO_FILE) then delfile(KEY_INFO_FILE) end
-end
+local function ClearKeyInfo() if isfile(KEY_INFO_FILE) then delfile(KEY_INFO_FILE) end end
 
 local function CheckKey()
     local inputKey = ""
@@ -150,24 +136,15 @@ local function CheckKey()
     local keyList = nil
     for attempt = 1, 5 do
         local success, res = pcall(game.HttpGet, game, KEY_URL)
-        if success then
-            keyList = res
-            break
-        end
+        if success then keyList = res; break end
         task.wait(2)
     end
-    if not keyList then
-        Player:Kick("Failed to load keys")
-        return
-    end
+    if not keyList then Player:Kick("Failed to load keys") return end
     local isValid = false
     for line in keyList:gmatch("[^\r\n]+") do
         if line == inputKey then isValid = true; break end
     end
-    if not isValid then
-        Player:Kick("Invalid Key!")
-        return
-    end
+    if not isValid then Player:Kick("Invalid Key!") return end
     SaveKeyInfo(inputKey)
 end
 
@@ -178,15 +155,13 @@ if savedHWID and savedHWID ~= currentHWID then
     Player:Kick("HWID mismatch!")
 elseif not savedHWID then
     CheckKey()
-    if not IsKeyValid() then
-        Player:Kick("Key expired (30 days). Purchase a new key.")
-    end
+    if not IsKeyValid() then Player:Kick("Key expired (30 days).") end
     SaveHWID(currentHWID)
 else
     if not IsKeyValid() then
         ResetHWID()
         ClearKeyInfo()
-        Player:Kick("Key expired (30 days). Restart with a new key.")
+        Player:Kick("Key expired. Restart with new key.")
     end
 end
 
@@ -202,15 +177,15 @@ local SellItems = {
     ["Steel Ball"] = true, ["Dio's Diary"] = true
 }
 
--- ========== GUI ==========
+-- ========== GUI (минимальное, без лишнего) ==========
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SameHub"
 screenGui.Parent = CoreGui
 screenGui.ResetOnSpawn = false
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 260, 0, 310)
-mainFrame.Position = UDim2.new(0.02, 0, 0.5, -155)
+mainFrame.Size = UDim2.new(0, 260, 0, 280)
+mainFrame.Position = UDim2.new(0.02, 0, 0.5, -140)
 mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 mainFrame.BackgroundTransparency = 0.05
 mainFrame.BorderSizePixel = 0
@@ -229,22 +204,17 @@ titleLabel.TextSize = 18
 titleLabel.Parent = mainFrame
 
 local dragging = false
-local dragStart
-local frameStart
-
+local dragStart, frameStart
 titleLabel.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         dragging = true
         dragStart = input.Position
         frameStart = mainFrame.Position
         input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
         end)
     end
 end)
-
 UserInputService.InputChanged:Connect(function(input)
     if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
         local delta = input.Position - dragStart
@@ -335,7 +305,7 @@ task.spawn(function()
     end
 end)
 
--- ========== БАЙПАСЫ ==========
+-- ========== БАЙПАСЫ (сжатые) ==========
 pcall(function()
     local FunctionLibrary = require(ReplicatedStorage:WaitForChild("Modules").FunctionLibrary)
     local OldPcall = FunctionLibrary.pcall
@@ -358,13 +328,10 @@ CoreGui.DescendantAdded:Connect(function(child)
 end)
 
 local Has2x = MarketplaceService:UserOwnsGamePassAsync(Player.UserId, 14597778)
-
 pcall(function()
     oldMagnitude = hookmetamethod(Vector3.new(), "__index", newcclosure(function(self, index)
         local CallingScript = tostring(getcallingscript())
-        if not checkcaller() and index == "magnitude" and CallingScript == "ItemSpawn" then
-            return 0
-        end
+        if not checkcaller() and index == "magnitude" and CallingScript == "ItemSpawn" then return 0 end
         return oldMagnitude(self, index)
     end))
 end)
@@ -396,101 +363,52 @@ end
 
 local noclipActive = false
 RunService.Stepped:Connect(function()
-    if not noclipActive then return end
-    local Char = GetCharacter()
-    if not Char then return end
-    for _, Child in pairs(Char:GetDescendants()) do
-        if Child:IsA("BasePart") then Child.CanCollide = false end
+    if noclipActive then
+        local Char = GetCharacter()
+        if Char then
+            for _, Child in pairs(Char:GetDescendants()) do
+                if Child:IsA("BasePart") then Child.CanCollide = false end
+            end
+        end
     end
 end)
 
 local function SetNoclip(Value)
     noclipActive = Value
-    if Value then return end
-    local Char = GetCharacter()
-    if not Char then return end
-    for _, Child in pairs(Char:GetDescendants()) do
-        if Child:IsA("BasePart") then Child.CanCollide = true end
+    if not Value then
+        local Char = GetCharacter()
+        if Char then
+            for _, Child in pairs(Char:GetDescendants()) do
+                if Child:IsA("BasePart") then Child.CanCollide = true end
+            end
+        end
     end
 end
 
 local function CountLuckyArrows()
     local count = 0
     for _, Tool in ipairs(Player.Backpack:GetChildren()) do
-        if Tool.Name == "Lucky Arrow" then count += 1 end
+        if Tool.Name == "Lucky Arrow" then count = count + 1 end
     end
     if Player.Character then
         for _, Tool in ipairs(Player.Character:GetChildren()) do
-            if Tool:IsA("Tool") and Tool.Name == "Lucky Arrow" then count += 1 end
+            if Tool:IsA("Tool") and Tool.Name == "Lucky Arrow" then count = count + 1 end
         end
     end
     return count
 end
 
--- ========== СЕРВЕР-ХОП (НАДЁЖНЫЙ) ==========
-local function ServerHop()
-    local servers = {}
-    local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
-    local data = HttpService:JSONDecode(res)
-    for _, v in pairs(data.data) do
-        if v.playing < v.maxPlayers and v.id ~= game.JobId then
-            table.insert(servers, v.id)
-        end
-    end
-    if #servers > 0 then
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)])
-    else
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))()
-    end
-end
-
--- Мониторинг предметов (работает всегда, независимо от сервера)
-task.spawn(function()
-    local noItemTimer = 0
-    while true do
-        task.wait(1)
-        local itemsFolder = workspace:FindFirstChild("Item_Spawns") and workspace.Item_Spawns:FindFirstChild("Items")
-        if itemsFolder then
-            local itemCount = #itemsFolder:GetChildren()
-            if itemCount == 0 then
-                noItemTimer = noItemTimer + 1
-                if noItemTimer >= 3 then
-                    statusLabel.Text = "Status: No items, hopping"
-                    ServerHop()
-                    task.wait(10)
-                    noItemTimer = 0
-                    statusLabel.Text = "Status: Farming"
-                end
-            else
-                noItemTimer = 0
-                -- Если статус был "No items", возвращаем
-                if statusLabel.Text ~= "Status: Farming" then
-                    statusLabel.Text = "Status: Farming"
-                end
-            end
-        else
-            -- Если папка не найдена, ждём 3 секунды и хоп
-            noItemTimer = noItemTimer + 1
-            if noItemTimer >= 3 then
-                statusLabel.Text = "Status: Items folder missing, hopping"
-                ServerHop()
-                task.wait(10)
-                noItemTimer = 0
-                statusLabel.Text = "Status: Farming"
-            end
-        end
-    end
-end)
-
--- ========== ОБНАРУЖЕНИЕ ПРЕДМЕТОВ ==========
+-- ========== ОБНАРУЖЕНИЕ ПРЕДМЕТОВ (упрощённое, с принтами) ==========
 local function GetItemInfo(Model)
     if Model and Model:IsA("Model") and Model.Parent and Model.Parent.Name == "Items" then
         local PrimaryPart = Model.PrimaryPart
+        if not PrimaryPart then return nil end
         local Position = PrimaryPart.Position
-        local ProximityPrompt
+        local ProximityPrompt = nil
         for _, ItemInstance in pairs(Model:GetChildren()) do
             if ItemInstance:IsA("ProximityPrompt") and ItemInstance.MaxActivationDistance ~= 0 then
                 ProximityPrompt = ItemInstance
+                break
             end
         end
         if ProximityPrompt then
@@ -503,54 +421,121 @@ end
 getgenv().SpawnedItems = {}
 
 local function RefreshItemList()
-    local itemsFolder = workspace:FindFirstChild("Item_Spawns") and workspace.Item_Spawns:FindFirstChild("Items")
-    if itemsFolder then
-        for _, model in pairs(itemsFolder:GetChildren()) do
+    local folder = workspace:FindFirstChild("Item_Spawns") and workspace.Item_Spawns:FindFirstChild("Items")
+    if folder then
+        local newCount = 0
+        for _, model in pairs(folder:GetChildren()) do
             if not getgenv().SpawnedItems[model] then
                 local info = GetItemInfo(model)
                 if info then
                     getgenv().SpawnedItems[model] = info
+                    newCount = newCount + 1
+                    print("[SameHub] Detected item:", info.Name, "at", info.Position)
                 end
             end
         end
+        if newCount > 0 then
+            print("[SameHub] Total tracked items:", #getgenv().SpawnedItems)
+        end
+    else
+        print("[SameHub] Items folder not found!")
     end
 end
 
--- Первоначальное сканирование
-RefreshItemList()
-
--- Отслеживание новых предметов
+-- Наблюдатель за появлением новых предметов
 local function OnItemAdded(Model)
     task.wait(0.5)
     if Model:IsA("Model") then
         local info = GetItemInfo(Model)
         if info then
             getgenv().SpawnedItems[Model] = info
+            print("[SameHub] New item spawned:", info.Name)
         end
     end
 end
 
--- Наблюдаем за папкой (с повторными попытками)
 task.spawn(function()
     while true do
-        local itemsFolder = workspace:FindFirstChild("Item_Spawns") and workspace.Item_Spawns:FindFirstChild("Items")
-        if itemsFolder then
-            itemsFolder.ChildAdded:Connect(OnItemAdded)
+        local folder = workspace:FindFirstChild("Item_Spawns") and workspace.Item_Spawns:FindFirstChild("Items")
+        if folder then
+            folder.ChildAdded:Connect(OnItemAdded)
             break
         end
         task.wait(2)
     end
 end)
 
--- Периодическое обновление списка
+-- Периодическое обновление (раз в 5 секунд)
 task.spawn(function()
     while true do
-        task.wait(10)
         RefreshItemList()
+        task.wait(5)
     end
 end)
 
--- ========== СКИП GUI И ЗАГРУЗКИ ==========
+-- ========== СЕРВЕР-ХОП (упрощённый, с диагностикой) ==========
+local function ServerHop()
+    print("[SameHub] ServerHop triggered!")
+    local servers = {}
+    local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
+    local data = HttpService:JSONDecode(res)
+    for _, v in pairs(data.data) do
+        if v.playing < v.maxPlayers and v.id ~= game.JobId then
+            table.insert(servers, v.id)
+        end
+    end
+    if #servers > 0 then
+        print("[SameHub] Hopping to server:", servers[math.random(1, #servers)])
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)])
+    else
+        print("[SameHub] No servers found, using fallback hop")
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))()
+    end
+end
+
+-- Мониторинг предметов (каждую секунду)
+task.spawn(function()
+    local noItemTimer = 0
+    while true do
+        task.wait(1)
+        local itemsFolder = workspace:FindFirstChild("Item_Spawns") and workspace.Item_Spawns:FindFirstChild("Items")
+        if itemsFolder then
+            local itemCount = #itemsFolder:GetChildren()
+            if itemCount == 0 then
+                noItemTimer = noItemTimer + 1
+                if noItemTimer >= 3 then
+                    print("[SameHub] No items for 3 seconds, hopping...")
+                    statusLabel.Text = "Status: No items, hopping"
+                    ServerHop()
+                    task.wait(10)
+                    noItemTimer = 0
+                    statusLabel.Text = "Status: Farming"
+                end
+            else
+                if noItemTimer > 0 then
+                    print("[SameHub] Items found again, resetting timer")
+                    noItemTimer = 0
+                end
+                if statusLabel.Text ~= "Status: Farming" then
+                    statusLabel.Text = "Status: Farming"
+                end
+            end
+        else
+            print("[SameHub] Items folder missing, incrementing timer")
+            noItemTimer = noItemTimer + 1
+            if noItemTimer >= 3 then
+                print("[SameHub] Items folder missing for 3 seconds, hopping...")
+                statusLabel.Text = "Status: Items folder missing, hopping"
+                ServerHop()
+                task.wait(10)
+                noItemTimer = 0
+                statusLabel.Text = "Status: Farming"
+            end
+        end
+    end
+end)
+
+-- ========== СКИП GUI ==========
 task.wait(1)
 if not PlayerGui:FindFirstChild("HUD") then
     local HUD = ReplicatedStorage.Objects.HUD:Clone()
@@ -578,6 +563,7 @@ end)
 repeat task.wait() until GetCharacter() and GetCharacter("RemoteEvent")
 GetCharacter("RemoteEvent"):FireServer("PressedPlay")
 TeleportTo(CFrame.new(978, -42, -49))
+print("[SameHub] Teleported to safe spot")
 task.wait(1)
 
 task.spawn(function()
@@ -586,6 +572,7 @@ task.spawn(function()
         pcall(function()
             if Char and Char:FindFirstChild("HumanoidRootPart") then
                 Char.HumanoidRootPart.CFrame = CFrame.new(978, -42, -49)
+                print("[SameHub] Respawned to safe spot")
             end
         end)
     end)
@@ -644,10 +631,17 @@ Player.Backpack.ChildAdded:Connect(function(tool)
 end)
 
 while true do
-    -- Собираем все предметы из списка
+    -- Диагностика: сколько предметов в очереди
+    local queueSize = 0
+    for _ in pairs(getgenv().SpawnedItems) do queueSize = queueSize + 1 end
+    if queueSize > 0 then
+        print("[SameHub] Items in queue:", queueSize)
+    end
+
     for Index, ItemInfo in pairs(getgenv().SpawnedItems) do
         local HumanoidRootPart = GetCharacter("HumanoidRootPart")
         if HumanoidRootPart then
+            print("[SameHub] Collecting:", ItemInfo.Name)
             local ProximityPrompt = ItemInfo.ProximityPrompt
             local Position = ItemInfo.Position
             getgenv().SpawnedItems[Index] = nil
