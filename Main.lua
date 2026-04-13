@@ -464,8 +464,34 @@ local function CountLuckyArrows()
     return count
 end
 
--- ========== СЕРВЕР-ХОП (ВНЕШНИЙ СКРИПТ) ==========
-local ServerHop = loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))
+-- ========== СЕРВЕР-ХОП (ПРОВЕРЕННЫЙ ВАРИАНТ) ==========
+local function ServerHop()
+    local Player = game.Players.LocalPlayer
+    local HttpService = game:GetService("HttpService")
+    local TeleportService = game:GetService("TeleportService")
+    local Api = "https://games.roblox.com/v1/games/"
+    local placeId, jobId = game.PlaceId, game.JobId
+    local serversUrl = Api .. placeId .. "/servers/Public?sortOrder=Desc&limit=100"
+
+    local function listServers(cursor)
+        local raw = game:HttpGet(serversUrl .. ((cursor and "&cursor=" .. cursor) or ""))
+        return HttpService:JSONDecode(raw)
+    end
+
+    local nextCursor
+    repeat
+        local servers = listServers(nextCursor)
+        for _, server in ipairs(servers.data) do
+            if server.playing < server.maxPlayers and server.id ~= jobId then
+                local success, err = pcall(TeleportService.TeleportToPlaceInstance, TeleportService, placeId, server.id, Player)
+                if success then
+                    return -- успешно телепортировались
+                end
+            end
+        end
+        nextCursor = servers.nextPageCursor
+    until not nextCursor
+end
 
 -- Отдельный поток: проверка каждую секунду, если 3 секунды нет предметов — хоп
 task.spawn(function()
