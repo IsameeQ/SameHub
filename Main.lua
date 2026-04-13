@@ -464,41 +464,29 @@ local function CountLuckyArrows()
     return count
 end
 
--- ========== СЕРВЕР-ХОП (3 СЕКУНДЫ БЕЗ ПРЕДМЕТОВ) ==========
-local function ServerHop()
-    local servers = {}
-    local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
-    local data = HttpService:JSONDecode(res)
-    for _, v in pairs(data.data) do
-        if v.playing < v.maxPlayers and v.id ~= game.JobId then
-            table.insert(servers, v.id)
-        end
-    end
-    if #servers > 0 then
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)])
-    else
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))()
-    end
-end
+-- ========== СЕРВЕР-ХОП (ВНЕШНИЙ СКРИПТ) ==========
+local ServerHop = loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))
 
 -- Отдельный поток: проверка каждую секунду, если 3 секунды нет предметов — хоп
 task.spawn(function()
-    local noItemTimer = 0
+    local timeWithNoItems = 0
+    local checkInterval = 1
+    local maxEmptyTime = 3
     while true do
-        task.wait(1)
+        task.wait(checkInterval)
         if ItemSpawnFolder then
-            local items = ItemSpawnFolder:GetChildren()
-            if #items == 0 then
-                noItemTimer = noItemTimer + 1
-                if noItemTimer >= 3 then
-                    statusLabel.Text = "Status: No items, hopping"
-                    ServerHop()
-                    task.wait(10)
-                    noItemTimer = 0
-                    statusLabel.Text = "Status: Farming"
-                end
+            local currentItems = #ItemSpawnFolder:GetChildren()
+            if currentItems == 0 then
+                timeWithNoItems = timeWithNoItems + checkInterval
             else
-                noItemTimer = 0
+                timeWithNoItems = 0
+            end
+            if timeWithNoItems >= maxEmptyTime then
+                statusLabel.Text = "Status: No items on map, hopping"
+                ServerHop()
+                task.wait(10)
+                timeWithNoItems = 0
+                statusLabel.Text = "Status: Farming"
             end
         end
     end
