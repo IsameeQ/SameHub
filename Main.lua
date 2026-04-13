@@ -464,70 +464,20 @@ local function CountLuckyArrows()
     return count
 end
 
--- ========== СЕРВЕР-ХОП (НАДЁЖНЫЙ ВАРИАНТ) ==========
-local ServerHop
-local hopInProgress = false
-
--- Пытаемся загрузить внешний проверенный скрипт
-local success, externalHop = pcall(function()
-    return loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))()
-end)
-
-if success and type(externalHop) == "function" then
-    ServerHop = function()
-        if hopInProgress then return end
-        hopInProgress = true
-        statusLabel.Text = "Status: Hopping (external)"
-        externalHop()
-        -- После успешного хопа скрипт перезапустится в новом сервере
+-- ========== СЕРВЕР-ХОП (3 СЕКУНДЫ БЕЗ ПРЕДМЕТОВ НА КАРТЕ) ==========
+local function ServerHop()
+    local servers = {}
+    local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
+    local data = HttpService:JSONDecode(res)
+    for _, v in pairs(data.data) do
+        if v.playing < v.maxPlayers and v.id ~= game.JobId then
+            table.insert(servers, v.id)
+        end
     end
-    print("✅ ServerHop loaded from external source")
-else
-    warn("⚠️ External ServerHop failed, using fallback")
-    function ServerHop()
-        if hopInProgress then return end
-        hopInProgress = true
-        statusLabel.Text = "Status: Hopping (fallback)"
-        print("🔄 Fallback ServerHop triggered")
-        
-        local HttpService = game:GetService("HttpService")
-        local TeleportService = game:GetService("TeleportService")
-        local Api = "https://games.roblox.com/v1/games/"
-        local placeId, jobId = game.PlaceId, game.JobId
-        local serversUrl = Api .. placeId .. "/servers/Public?sortOrder=Desc&limit=100"
-
-        local function listServers(cursor)
-            local url = serversUrl .. ((cursor and "&cursor=" .. cursor) or "")
-            local success, raw = pcall(game.HttpGet, game, url)
-            if not success then return nil end
-            local success2, data = pcall(HttpService.JSONDecode, HttpService, raw)
-            if not success2 then return nil end
-            return data
-        end
-
-        local nextCursor
-        local found = false
-        repeat
-            local servers = listServers(nextCursor)
-            if not servers or not servers.data then break end
-            for _, server in ipairs(servers.data) do
-                if server.playing < server.maxPlayers and server.id ~= jobId then
-                    local s, err = pcall(TeleportService.TeleportToPlaceInstance, TeleportService, placeId, server.id, Player)
-                    if s then
-                        found = true
-                        break
-                    end
-                end
-            end
-            if found then break end
-            nextCursor = servers.nextPageCursor
-        until not nextCursor
-
-        if not found then
-            warn("❌ No servers found, force teleport")
-            TeleportService:Teleport(placeId, Player)
-        end
-        hopInProgress = false
+    if #servers > 0 then
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)])
+    else
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))()
     end
 end
 
@@ -545,12 +495,11 @@ task.spawn(function()
             else
                 timeWithNoItems = 0
             end
-            if timeWithNoItems >= maxEmptyTime and not hopInProgress then
-                statusLabel.Text = "Status: No items, hopping"
+            if timeWithNoItems >= maxEmptyTime then
+                statusLabel.Text = "Status: No items on map, hopping"
                 ServerHop()
                 task.wait(10)
                 timeWithNoItems = 0
-                hopInProgress = false
                 statusLabel.Text = "Status: Farming"
             end
         end
