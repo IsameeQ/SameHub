@@ -16,7 +16,7 @@ if not VerifyAccess() then
     return
 end
 
-repeat task.wait(1) until game:IsLoaded()
+repeat task.wait(0.1) until game:IsLoaded()
 
 local BuyLucky = true
 local AutoSell = true
@@ -35,6 +35,29 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MarketplaceService = game:GetService("MarketplaceService")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
+
+-- Полный скип GUI загрузки
+task.spawn(function()
+    pcall(function()
+        -- Удаляем стандартные экраны загрузки YBA
+        local loadingNames = {"LoadingScreen", "LoadingScreen1", "TeleportGui", "IntroGui"}
+        for _, name in pairs(loadingNames) do
+            local gui = PlayerGui:FindFirstChild(name)
+            if gui then gui:Destroy() end
+        end
+        
+        -- Убираем блюр, если он остался
+        local lighting = game:GetService("Lighting")
+        local blur = lighting:FindFirstChildOfClass("BlurEffect")
+        if blur then blur:Destroy() end
+        
+        -- Посылаем сигнал старта игры
+        local event = ReplicatedStorage:FindFirstChild("RemoteEvent") or ReplicatedStorage:FindFirstChild("Events"):FindFirstChild("RemoteEvent")
+        if event then
+            event:FireServer("PressedPlay")
+        end
+    end)
+end)
 
 local oldNc
 oldNc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
@@ -86,68 +109,53 @@ end
 
 local ServerHop = loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))
 
-getgenv().SpawnedItems = {}
-local ItemSpawnFolder = Workspace:WaitForChild("Item_Spawns", 10):WaitForChild("Items", 10)
+local ItemSpawnFolder = Workspace:WaitForChild("Item_Spawns", 20):WaitForChild("Items", 20)
 
-ItemSpawnFolder.ChildAdded:Connect(function(m)
-    task.wait(1)
-    if m:IsA("Model") and m.PrimaryPart then
-        local p = m:FindFirstChildOfClass("ProximityPrompt")
-        if p then getgenv().SpawnedItems[m] = {Name = p.ObjectText, ProximityPrompt = p, Position = m.PrimaryPart.Position} end
-    end
-end)
-
-task.spawn(function()
-    pcall(function()
-        PlayerGui:WaitForChild("LoadingScreen1"):Destroy()
-        task.wait(0.5)
-        PlayerGui:WaitForChild("LoadingScreen"):Destroy()
-    end)
-end)
-
-repeat task.wait() until GetCharacter() and GetCharacter("RemoteEvent")
-GetCharacter("RemoteEvent"):FireServer("PressedPlay")
+repeat task.wait(1) until GetCharacter() and GetCharacter():FindFirstChild("RemoteEvent")
+task.wait(1)
 TeleportTo(CFrame.new(978, -42, -49))
-task.wait(5)
 
 while true do
-    for m, info in pairs(getgenv().SpawnedItems) do
-        if not HasMaxItem(info.Name) then
-            local HRP = GetCharacter("HumanoidRootPart")
-            if HRP then
-                getgenv().SpawnedItems[m] = nil
-                local bv = Instance.new("BodyVelocity", HRP)
-                bv.Velocity = Vector3.new(0, 0, 0)
-                ToggleNoclip(true)
-                TeleportTo(CFrame.new(info.Position.X, info.Position.Y + 25, info.Position.Z))
-                task.wait(0.5)
-                fireproximityprompt(info.ProximityPrompt)
-                task.wait(0.5)
-                bv:Destroy()
-                TeleportTo(CFrame.new(978, -42, -49))
+    local items = ItemSpawnFolder:GetChildren()
+    for _, m in pairs(items) do
+        if m:IsA("Model") and m.PrimaryPart then
+            local p = m:FindFirstChildOfClass("ProximityPrompt")
+            if p and not HasMaxItem(p.ObjectText) then
+                local HRP = GetCharacter("HumanoidRootPart")
+                if HRP then
+                    local bv = Instance.new("BodyVelocity", HRP)
+                    bv.Velocity = Vector3.new(0, 0, 0)
+                    ToggleNoclip(true)
+                    TeleportTo(m.PrimaryPart.CFrame + Vector3.new(0, 5, 0))
+                    task.wait(0.4)
+                    fireproximityprompt(p)
+                    task.wait(0.3)
+                    bv:Destroy()
+                end
             end
-        else
-            getgenv().SpawnedItems[m] = nil
         end
     end
 
     if AutoSell then
-        for item, sell in pairs(SellItems) do
-            if sell and Player.Backpack:FindFirstChild(item) then
-                GetCharacter("Humanoid"):EquipTool(Player.Backpack[item])
-                GetCharacter("RemoteEvent"):FireServer("EndDialogue", {["NPC"] = "Merchant", ["Dialogue"] = "Dialogue5", ["Option"] = "Option2"})
-                task.wait(0.1)
+        pcall(function()
+            local event = GetCharacter("RemoteEvent")
+            for _, tool in pairs(Player.Backpack:GetChildren()) do
+                if SellItems[tool.Name] then
+                    Player.Character.Humanoid:EquipTool(tool)
+                    event:FireServer("EndDialogue", {["NPC"] = "Merchant", ["Dialogue"] = "Dialogue5", ["Option"] = "Option2"})
+                    task.wait(0.1)
+                end
             end
-        end
+        end)
     end
 
     local Money = Player.PlayerStats.Money
     if BuyLucky and Money.Value >= 75000 then
-        Player.Character.RemoteEvent:FireServer("PurchaseShopItem", {["ItemName"] = "1x Lucky Arrow"})
+        GetCharacter("RemoteEvent"):FireServer("PurchaseShopItem", {["ItemName"] = "1x Lucky Arrow"})
         task.wait(1)
     end
 
-    task.wait(5)
+    task.wait(2)
     ServerHop()
     task.wait(10)
 end
