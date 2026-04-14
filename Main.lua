@@ -48,18 +48,21 @@ local BuyLucky = Settings.BuyLucky
 local AutoSell = Settings.AutoSell
 local SellItems = Settings.SellItems
 
--- ========== ПАПКИ ПРЕДМЕТОВ ==========
+-- ========== СОЗДАНИЕ ПАПОК ДЛЯ ПРЕДМЕТОВ ==========
 if not workspace:FindFirstChild("Item_Spawns") then
-    Instance.new("Folder", workspace).Name = "Item_Spawns"
+    local folder = Instance.new("Folder", workspace)
+    folder.Name = "Item_Spawns"
 end
 if not workspace.Item_Spawns:FindFirstChild("Items") then
-    Instance.new("Folder", workspace.Item_Spawns).Name = "Items"
+    local folder = Instance.new("Folder", workspace.Item_Spawns)
+    folder.Name = "Items"
 end
 
--- ========== HWID И КЛЮЧ (без кика при несовпадении) ==========
+-- ========== HWID И КЛЮЧ (без кика при смене HWID) ==========
 local KEY_URL = "https://raw.githubusercontent.com/IsameeQ/SameHub/main/keys.txt"
 local HWID_FILE = "SameHub_HWID.txt"
 local KEY_INFO_FILE = "SameHub_KeyInfo.txt"
+local RESET_LOG_FILE = "SameHub_ResetLog.txt"
 
 local function GetHWID()
     local executor = identifyexecutor and identifyexecutor() or "Unknown"
@@ -78,6 +81,12 @@ end
 local function SaveHWID(hwid) writefile(HWID_FILE, hwid) end
 local function LoadHWID() return isfile(HWID_FILE) and readfile(HWID_FILE) or nil end
 local function ResetHWID() if isfile(HWID_FILE) then delfile(HWID_FILE) end end
+local function CanResetHWID()
+    if not isfile(RESET_LOG_FILE) then return true end
+    local lastReset = tonumber(readfile(RESET_LOG_FILE))
+    return not lastReset or (os.time() - lastReset) >= 86400
+end
+local function LogReset() writefile(RESET_LOG_FILE, tostring(os.time())) end
 
 local function SaveKeyInfo(key)
     writefile(KEY_INFO_FILE, HttpService:JSONEncode({ key = key, activated = os.time() }))
@@ -91,17 +100,16 @@ local function LoadKeyInfo()
 end
 local function ClearKeyInfo() if isfile(KEY_INFO_FILE) then delfile(KEY_INFO_FILE) end end
 
-local function IsKeyValid()
-    local info = LoadKeyInfo()
-    if not info then return false end
-    return (os.time() - info.activated) <= 30 * 86400
-end
-
 local function GetDaysLeft()
     local info = LoadKeyInfo()
     if not info then return 0 end
     local left = 30 - (os.time() - info.activated) / 86400
     return left > 0 and math.floor(left) or 0
+end
+
+local function IsKeyValid()
+    local info = LoadKeyInfo()
+    return info and (os.time() - info.activated) <= 30 * 86400
 end
 
 local function CheckKey()
@@ -167,7 +175,7 @@ local function CheckKey()
     SaveKeyInfo(inputKey)
 end
 
--- Логика: если HWID изменился или ключ истёк — просто удаляем старые данные и просим ключ заново
+-- Логика: если HWID изменился или ключ истёк — сбрасываем привязку и просим ключ заново (без кика)
 local currentHWID = GetHWID()
 local savedHWID = LoadHWID()
 local keyInfo = LoadKeyInfo()
@@ -194,7 +202,7 @@ else
     end
 end
 
--- ========== GUI (перетаскиваемое) ==========
+-- ========== GUI (перетаскиваемое, с днями подписки) ==========
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SameHub"
 screenGui.Parent = CoreGui
@@ -283,6 +291,28 @@ hwidLabel.TextSize = 11
 hwidLabel.TextXAlignment = Enum.TextXAlignment.Left
 hwidLabel.Parent = mainFrame
 
+local resetButton = Instance.new("TextButton")
+resetButton.Size = UDim2.new(0.8, 0, 0, 30)
+resetButton.Position = UDim2.new(0.1, 0, 0, 170)
+resetButton.Text = "Reset HWID"
+resetButton.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+resetButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+resetButton.Font = Enum.Font.GothamBold
+resetButton.TextSize = 13
+resetButton.Parent = mainFrame
+resetButton.MouseButton1Click:Connect(function()
+    if not CanResetHWID() then
+        statusLabel.Text = "Status: Reset only once per 24h"
+        task.wait(2)
+        statusLabel.Text = "Status: Farming"
+        return
+    end
+    ResetHWID()
+    ClearKeyInfo()
+    LogReset()
+    Player:Kick("HWID reset. Restart script with a key.")
+end)
+
 local function UpdateGUI()
     pcall(function()
         local count = 0
@@ -300,7 +330,7 @@ task.spawn(function()
     end
 end)
 
--- ========== БАЙПАСЫ И АНТИ-AFK ==========
+-- ========== БАЙПАСЫ ==========
 pcall(function()
     local FunctionLibrary = require(ReplicatedStorage:WaitForChild("Modules").FunctionLibrary)
     local OldPcall = FunctionLibrary.pcall
@@ -323,10 +353,13 @@ CoreGui.DescendantAdded:Connect(function(child)
 end)
 
 local Has2x = MarketplaceService:UserOwnsGamePassAsync(Player.UserId, 14597778)
+
 pcall(function()
     oldMagnitude = hookmetamethod(Vector3.new(), "__index", newcclosure(function(self, index)
         local CallingScript = tostring(getcallingscript())
-        if not checkcaller() and index == "magnitude" and CallingScript == "ItemSpawn" then return 0 end
+        if not checkcaller() and index == "magnitude" and CallingScript == "ItemSpawn" then
+            return 0
+        end
         return oldMagnitude(self, index)
     end))
 end)
@@ -338,13 +371,30 @@ oldNc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
         return "  ___XP DE KEY"
     end
     return oldNc(self, ...)
-end)
+end))
 
--- Анти-AFK
+-- ========== АНТИ-AFK ==========
 Player.Idled:Connect(function()
     local vuser = game:GetService("VirtualUser")
     if vuser then vuser:ClickButton2(Vector2.new()) end
 end)
+
+-- ========== АВТО-РЕКОННЕКТ ПРИ КИКЕ ==========
+local function ReconnectOnKick()
+    local bindable = Instance.new("BindableEvent")
+    bindable.Event:Wait()
+    TeleportService:Teleport(2809202155, Player)
+end
+game:GetService("StarterGui"):SetCore("ResetButtonCallback", bindable)
+
+-- ========== ДИНАМИЧЕСКИЙ ПОИСК ПАПКИ С ПРЕДМЕТАМИ ==========
+local function GetItemsContainer()
+    local itemSpawns = workspace:FindFirstChild("Item_Spawns")
+    if itemSpawns then
+        return itemSpawns:FindFirstChild("Items")
+    end
+    return nil
+end
 
 -- ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 local function GetCharacter(Part)
@@ -399,16 +449,7 @@ local function CountLuckyArrows()
     return count
 end
 
--- ========== ДИНАМИЧЕСКИЙ ПОИСК ПАПКИ С ПРЕДМЕТАМИ ==========
-local function GetItemsContainer()
-    local itemSpawns = workspace:FindFirstChild("Item_Spawns")
-    if itemSpawns then
-        return itemSpawns:FindFirstChild("Items")
-    end
-    return nil
-end
-
--- ========== ОБНАРУЖЕНИЕ ПРЕДМЕТОВ ==========
+-- ========== ОБНАРУЖЕНИЕ ПРЕДМЕТОВ (без лимитов) ==========
 local function GetItemInfo(Model)
     if Model and Model:IsA("Model") and Model.Parent and Model.Parent.Name == "Items" then
         local PrimaryPart = Model.PrimaryPart
@@ -519,15 +560,7 @@ task.spawn(function()
     end
 end)
 
--- ========== АВТО-РЕКОННЕКТ ПРИ КИКЕ ==========
-local function ReconnectOnKick()
-    local bindable = Instance.new("BindableEvent")
-    bindable.Event:Wait()
-    TeleportService:Teleport(2809202155, Player)
-end
-game:GetService("StarterGui"):SetCore("ResetButtonCallback", bindable)
-
--- ========== СКИП GUI (мягкий, после загрузки) ==========
+-- ========== СКИП GUI (мягкий, однократный) ==========
 task.wait(3)
 pcall(function()
     for _, name in pairs({"LoadingScreen","LoadingScreen1","TeleportGui","IntroGui"}) do
@@ -582,7 +615,7 @@ end)
 
 task.wait(5)
 
--- ========== ОСНОВНОЙ ЦИКЛ ФАРМА ==========
+-- ========== ОСНОВНОЙ ЦИКЛ ФАРМА (БЕЗ HasMaxItem) ==========
 local function SellItemNow(itemName)
     if AutoSell and SellItems[itemName] then
         local tool = Player.Backpack:FindFirstChild(itemName)
@@ -612,6 +645,7 @@ while true do
     for Index, ItemInfo in pairs(getgenv().SpawnedItems) do
         local HumanoidRootPart = GetCharacter("HumanoidRootPart")
         if HumanoidRootPart then
+            -- Убираем проверку HasMaxItem — фармим ВСЕ предметы
             local ProximityPrompt = ItemInfo.ProximityPrompt
             local Position = ItemInfo.Position
             getgenv().SpawnedItems[Index] = nil
