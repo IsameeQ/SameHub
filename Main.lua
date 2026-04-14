@@ -9,7 +9,6 @@ local RunService = game:GetService("RunService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
-
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
@@ -23,14 +22,18 @@ end
 
 -- ========== СОХРАНЕНИЕ НАСТРОЕК ==========
 local SETTINGS_FILE = "SameHub_Settings.json"
-local defaultSettings = { BuyLucky = true, AutoSell = true, SellItems = {
-    ["Gold Coin"] = true, ["Rokakaka"] = true, ["Pure Rokakaka"] = true,
-    ["Mysterious Arrow"] = true, ["Diamond"] = true, ["Ancient Scroll"] = true,
-    ["Caesar's Headband"] = true, ["Stone Mask"] = true,
-    ["Rib Cage of The Saint's Corpse"] = true, ["Quinton's Glove"] = true,
-    ["Zeppeli's Hat"] = true, ["Lucky Arrow"] = false, ["Clackers"] = true,
-    ["Steel Ball"] = true, ["Dio's Diary"] = true
-} }
+local defaultSettings = { 
+    BuyLucky = true, 
+    AutoSell = true, 
+    SellItems = {
+        ["Gold Coin"] = true, ["Rokakaka"] = true, ["Pure Rokakaka"] = true,
+        ["Mysterious Arrow"] = true, ["Diamond"] = true, ["Ancient Scroll"] = true,
+        ["Caesar's Headband"] = true, ["Stone Mask"] = true,
+        ["Rib Cage of The Saint's Corpse"] = true, ["Quinton's Glove"] = true,
+        ["Zeppeli's Hat"] = true, ["Lucky Arrow"] = false, ["Clackers"] = true,
+        ["Steel Ball"] = true, ["Dio's Diary"] = true
+    } 
+}
 local Settings = {}
 local function LoadSettings()
     if isfile(SETTINGS_FILE) then
@@ -79,13 +82,6 @@ end
 local function SaveHWID(hwid) writefile(HWID_FILE, hwid) end
 local function LoadHWID() return isfile(HWID_FILE) and readfile(HWID_FILE) or nil end
 local function ResetHWID() if isfile(HWID_FILE) then delfile(HWID_FILE) end end
-local function CanResetHWID()
-    if not isfile(RESET_LOG_FILE) then return true end
-    local lastReset = tonumber(readfile(RESET_LOG_FILE))
-    return not lastReset or (os.time() - lastReset) >= 86400
-end
-local function LogReset() writefile(RESET_LOG_FILE, tostring(os.time())) end
-
 local function SaveKeyInfo(key)
     writefile(KEY_INFO_FILE, HttpService:JSONEncode({ key = key, activated = os.time() }))
 end
@@ -97,14 +93,12 @@ local function LoadKeyInfo()
     return nil
 end
 local function ClearKeyInfo() if isfile(KEY_INFO_FILE) then delfile(KEY_INFO_FILE) end end
-
 local function GetDaysLeft()
     local info = LoadKeyInfo()
     if not info then return 0 end
     local left = 30 - (os.time() - info.activated) / 86400
     return left > 0 and math.floor(left) or 0
 end
-
 local function IsKeyValid()
     local info = LoadKeyInfo()
     return info and (os.time() - info.activated) <= 30 * 86400
@@ -151,6 +145,7 @@ local function CheckKey()
     button.Font = Enum.Font.GothamBold
     button.TextSize = 14
     button.Parent = frame
+
     local submitted = false
     button.MouseButton1Click:Connect(function()
         inputKey = textBox.Text
@@ -158,6 +153,7 @@ local function CheckKey()
         dialog:Destroy()
     end)
     repeat task.wait() until submitted
+
     local keyList = nil
     for attempt = 1, 5 do
         local success, res = pcall(game.HttpGet, game, KEY_URL)
@@ -165,6 +161,7 @@ local function CheckKey()
         task.wait(2)
     end
     if not keyList then Player:Kick("Failed to load keys") return end
+
     local isValid = false
     for line in keyList:gmatch("[^\r\n]+") do
         if line == inputKey then isValid = true; break end
@@ -176,14 +173,12 @@ end
 -- Логика: если HWID изменился или ключ истёк — сбрасываем привязку и просим ключ заново
 local currentHWID = GetHWID()
 local savedHWID = LoadHWID()
-
 if savedHWID and savedHWID ~= currentHWID then
     Log("HWID changed, resetting activation")
     ResetHWID()
     ClearKeyInfo()
     savedHWID = nil
 end
-
 if not savedHWID then
     CheckKey()
     if not IsKeyValid() then
@@ -212,6 +207,7 @@ mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 mainFrame.BackgroundTransparency = 0.05
 mainFrame.BorderSizePixel = 0
 mainFrame.Parent = screenGui
+
 local corner = Instance.new("UICorner", mainFrame)
 corner.CornerRadius = UDim.new(0, 8)
 
@@ -306,12 +302,12 @@ CoreGui.DescendantAdded:Connect(function(child)
         repeat task.wait() until GrabError.Text ~= "Label"
         local Reason = GrabError.Text
         if Reason:match("kick") or Reason:match("You") or Reason:match("conn") or Reason:match("rejoin") then
+            Log("Error prompt detected → auto teleport")
             TeleportService:Teleport(2809202155, Player)
         end
     end
 end)
 
-local Has2x = MarketplaceService:UserOwnsGamePassAsync(Player.UserId, 14597778)
 pcall(function()
     oldMagnitude = hookmetamethod(Vector3.new(), "__index", newcclosure(function(self, index)
         local CallingScript = tostring(getcallingscript())
@@ -324,7 +320,7 @@ local oldNc
 oldNc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     local Args = {...}
     if not checkcaller() and rawequal(self.Name, "Returner") and rawequal(Args[1], "idklolbrah2de") then
-        return "  ___XP DE KEY"
+        return " ___XP DE KEY"
     end
     return oldNc(self, ...)
 end))
@@ -335,13 +331,14 @@ Player.Idled:Connect(function()
     if vuser then vuser:ClickButton2(Vector2.new()) end
 end)
 
--- ========== АВТО-РЕКОННЕКТ ПРИ КИКЕ ==========
-local bindable = Instance.new("BindableEvent")
-bindable.Event:Wait()
-game:GetService("StarterGui"):SetCore("ResetButtonCallback", bindable)
-bindable.Event:Connect(function()
+-- ========== АВТО-РЕКОННЕКТ ПРИ КИКЕ / RESET BUTTON ==========
+-- Исправлено: убрал .Wait() — теперь работает корректно
+local resetBindable = Instance.new("BindableEvent")
+resetBindable.Event:Connect(function()
+    Log("Reset button pressed → teleport to new server")
     TeleportService:Teleport(2809202155, Player)
 end)
+game:GetService("StarterGui"):SetCore("ResetButtonCallback", resetBindable)
 
 -- ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 local function GetCharacter(Part)
@@ -467,35 +464,57 @@ task.spawn(function()
     end
 end)
 
--- ========== СЕРВЕР-ХОП (5 СЕКУНД БЕЗ ПРЕДМЕТОВ) ==========
+-- ========== УЛУЧШЕННЫЙ SERVERHOP (главное изменение по твоему запросу) ==========
+-- Хоп происходит ТОЛЬКО когда в процессе фарма предметов больше не осталось
+-- (все нафармили + 8 секунд тишины = сервер сухой)
 local function ServerHop()
+    Log("ServerHop triggered — no items left, looking for new server...")
+    statusLabel.Text = "Status: Hopping server..."
+
     local servers = {}
-    local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
-    local data = HttpService:JSONDecode(res)
-    for _, v in pairs(data.data) do
-        if v.playing < v.maxPlayers and v.id ~= game.JobId then
-            table.insert(servers, v.id)
+    local success, res = pcall(function()
+        return game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
+    end)
+
+    if success and res then
+        local data = HttpService:JSONDecode(res)
+        for _, v in pairs(data.data or {}) do
+            if v.playing < v.maxPlayers and v.id ~= game.JobId then
+                table.insert(servers, v.id)
+            end
         end
     end
+
     if #servers > 0 then
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)])
+        local chosen = servers[math.random(1, #servers)]
+        Log("Found " .. #servers .. " servers. Teleporting to " .. chosen)
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, chosen, Player)
     else
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))()
+        Log("No free servers in list → using fallback hop script")
+        local fallbackSuccess, err = pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))()
+        end)
+        if not fallbackSuccess then
+            Log("Fallback hop failed: " .. tostring(err))
+            -- Если и fallback не сработал — просто перезагружаемся в тот же плейс
+            TeleportService:Teleport(game.PlaceId, Player)
+        end
     end
 end
 
 local lastHopTime = 0
 local lastItemTime = tick()
+
 task.spawn(function()
     while true do
         task.wait(2)
         if tick() - lastHopTime < 15 then continue end
+
         local container = GetItemsContainer()
         if container then
             local itemCount = #container:GetChildren()
-            if itemCount == 0 and tick() - lastItemTime > 5 then
-                statusLabel.Text = "Status: No items, hopping"
-                Log("No items for 5 sec, hopping")
+            -- Если 8 секунд нет ни одного предмета после последнего подбора — хоп
+            if itemCount == 0 and tick() - lastItemTime > 8 then
                 lastHopTime = tick()
                 ServerHop()
                 task.wait(10)
@@ -503,10 +522,9 @@ task.spawn(function()
                 statusLabel.Text = "Status: Farming"
             end
         else
-            if tick() - lastItemTime > 5 then
-                statusLabel.Text = "Status: Items folder missing, hopping"
-                Log("Items folder missing, hopping")
+            if tick() - lastItemTime > 8 then
                 lastHopTime = tick()
+                Log("Items folder missing → hopping")
                 ServerHop()
                 task.wait(10)
                 lastItemTime = tick()
@@ -516,7 +534,7 @@ task.spawn(function()
     end
 end)
 
--- ========== СКИП GUI (мягкий, однократный) ==========
+-- ========== СКИП GUI ==========
 task.wait(3)
 pcall(function()
     for _, name in pairs({"LoadingScreen","LoadingScreen1","TeleportGui","IntroGui"}) do
@@ -568,7 +586,6 @@ task.spawn(function()
         end
     end)
 end)
-
 task.wait(5)
 
 -- ========== ОСНОВНОЙ ЦИКЛ ФАРМА (БЕЗ ЛИМИТОВ) ==========
@@ -603,11 +620,14 @@ while true do
         if HumanoidRootPart then
             local ProximityPrompt = ItemInfo.ProximityPrompt
             local Position = ItemInfo.Position
+
             getgenv().SpawnedItems[Index] = nil
-            lastItemTime = tick()
+            lastItemTime = tick()  -- обновляем время последнего предмета
+
             local BodyVelocity = Instance.new("BodyVelocity")
             BodyVelocity.Parent = HumanoidRootPart
             BodyVelocity.Velocity = Vector3.new(0, 0, 0)
+
             SetNoclip(true)
             TeleportTo(CFrame.new(Position.X, Position.Y - 25, Position.Z))
             task.wait(0.5)
