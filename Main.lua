@@ -50,12 +50,10 @@ local SellItems = Settings.SellItems
 
 -- ========== СОЗДАНИЕ ПАПОК ДЛЯ ПРЕДМЕТОВ ==========
 if not workspace:FindFirstChild("Item_Spawns") then
-    local folder = Instance.new("Folder", workspace)
-    folder.Name = "Item_Spawns"
+    Instance.new("Folder", workspace).Name = "Item_Spawns"
 end
 if not workspace.Item_Spawns:FindFirstChild("Items") then
-    local folder = Instance.new("Folder", workspace.Item_Spawns)
-    folder.Name = "Items"
+    Instance.new("Folder", workspace.Item_Spawns).Name = "Items"
 end
 
 -- ========== HWID И КЛЮЧ (без кика при смене HWID) ==========
@@ -175,10 +173,9 @@ local function CheckKey()
     SaveKeyInfo(inputKey)
 end
 
--- Логика: если HWID изменился или ключ истёк — сбрасываем привязку и просим ключ заново (без кика)
+-- Логика: если HWID изменился или ключ истёк — сбрасываем привязку и просим ключ заново
 local currentHWID = GetHWID()
 local savedHWID = LoadHWID()
-local keyInfo = LoadKeyInfo()
 
 if savedHWID and savedHWID ~= currentHWID then
     Log("HWID changed, resetting activation")
@@ -193,7 +190,7 @@ if not savedHWID then
         Player:Kick("Key expired (30 days). Purchase a new key.")
     end
     SaveHWID(currentHWID)
-    Log("HWID activated for key")
+    Log("HWID activated")
 else
     if not IsKeyValid() then
         ResetHWID()
@@ -202,15 +199,15 @@ else
     end
 end
 
--- ========== GUI (перетаскиваемое, с днями подписки) ==========
+-- ========== GUI (только статус, дни, HWID, перетаскивание) ==========
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SameHub"
 screenGui.Parent = CoreGui
 screenGui.ResetOnSpawn = false
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 260, 0, 310)
-mainFrame.Position = UDim2.new(0.02, 0, 0.5, -155)
+mainFrame.Size = UDim2.new(0, 260, 0, 200)
+mainFrame.Position = UDim2.new(0.02, 0, 0.5, -100)
 mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 mainFrame.BackgroundTransparency = 0.05
 mainFrame.BorderSizePixel = 0
@@ -249,7 +246,7 @@ end)
 
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Size = UDim2.new(1, -20, 0, 25)
-statusLabel.Position = UDim2.new(0, 10, 0, 40)
+statusLabel.Position = UDim2.new(0, 10, 0, 45)
 statusLabel.BackgroundTransparency = 1
 statusLabel.Text = "Status: Farming"
 statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
@@ -258,20 +255,9 @@ statusLabel.TextSize = 13
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
 statusLabel.Parent = mainFrame
 
-local itemsLabel = Instance.new("TextLabel")
-itemsLabel.Size = UDim2.new(1, -20, 0, 25)
-itemsLabel.Position = UDim2.new(0, 10, 0, 70)
-itemsLabel.BackgroundTransparency = 1
-itemsLabel.Text = "Items: 0"
-itemsLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-itemsLabel.Font = Enum.Font.Gotham
-itemsLabel.TextSize = 13
-itemsLabel.TextXAlignment = Enum.TextXAlignment.Left
-itemsLabel.Parent = mainFrame
-
 local daysLabel = Instance.new("TextLabel")
 daysLabel.Size = UDim2.new(1, -20, 0, 25)
-daysLabel.Position = UDim2.new(0, 10, 0, 100)
+daysLabel.Position = UDim2.new(0, 10, 0, 80)
 daysLabel.BackgroundTransparency = 1
 daysLabel.Text = "Days left: " .. GetDaysLeft()
 daysLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
@@ -282,7 +268,7 @@ daysLabel.Parent = mainFrame
 
 local hwidLabel = Instance.new("TextLabel")
 hwidLabel.Size = UDim2.new(1, -20, 0, 25)
-hwidLabel.Position = UDim2.new(0, 10, 0, 130)
+hwidLabel.Position = UDim2.new(0, 10, 0, 115)
 hwidLabel.BackgroundTransparency = 1
 hwidLabel.Text = "HWID: " .. string.sub(currentHWID, 1, 16) .. "..."
 hwidLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
@@ -291,35 +277,8 @@ hwidLabel.TextSize = 11
 hwidLabel.TextXAlignment = Enum.TextXAlignment.Left
 hwidLabel.Parent = mainFrame
 
-local resetButton = Instance.new("TextButton")
-resetButton.Size = UDim2.new(0.8, 0, 0, 30)
-resetButton.Position = UDim2.new(0.1, 0, 0, 170)
-resetButton.Text = "Reset HWID"
-resetButton.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-resetButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-resetButton.Font = Enum.Font.GothamBold
-resetButton.TextSize = 13
-resetButton.Parent = mainFrame
-resetButton.MouseButton1Click:Connect(function()
-    if not CanResetHWID() then
-        statusLabel.Text = "Status: Reset only once per 24h"
-        task.wait(2)
-        statusLabel.Text = "Status: Farming"
-        return
-    end
-    ResetHWID()
-    ClearKeyInfo()
-    LogReset()
-    Player:Kick("HWID reset. Restart script with a key.")
-end)
-
 local function UpdateGUI()
     pcall(function()
-        local count = 0
-        for _, tool in pairs(Player.Backpack:GetChildren()) do
-            if SellItems[tool.Name] then count = count + 1 end
-        end
-        itemsLabel.Text = "Items to sell: " .. count
         daysLabel.Text = "Days left: " .. GetDaysLeft()
     end)
 end
@@ -353,13 +312,10 @@ CoreGui.DescendantAdded:Connect(function(child)
 end)
 
 local Has2x = MarketplaceService:UserOwnsGamePassAsync(Player.UserId, 14597778)
-
 pcall(function()
     oldMagnitude = hookmetamethod(Vector3.new(), "__index", newcclosure(function(self, index)
         local CallingScript = tostring(getcallingscript())
-        if not checkcaller() and index == "magnitude" and CallingScript == "ItemSpawn" then
-            return 0
-        end
+        if not checkcaller() and index == "magnitude" and CallingScript == "ItemSpawn" then return 0 end
         return oldMagnitude(self, index)
     end))
 end)
@@ -380,21 +336,12 @@ Player.Idled:Connect(function()
 end)
 
 -- ========== АВТО-РЕКОННЕКТ ПРИ КИКЕ ==========
-local function ReconnectOnKick()
-    local bindable = Instance.new("BindableEvent")
-    bindable.Event:Wait()
-    TeleportService:Teleport(2809202155, Player)
-end
+local bindable = Instance.new("BindableEvent")
+bindable.Event:Wait()
 game:GetService("StarterGui"):SetCore("ResetButtonCallback", bindable)
-
--- ========== ДИНАМИЧЕСКИЙ ПОИСК ПАПКИ С ПРЕДМЕТАМИ ==========
-local function GetItemsContainer()
-    local itemSpawns = workspace:FindFirstChild("Item_Spawns")
-    if itemSpawns then
-        return itemSpawns:FindFirstChild("Items")
-    end
-    return nil
-end
+bindable.Event:Connect(function()
+    TeleportService:Teleport(2809202155, Player)
+end)
 
 -- ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 local function GetCharacter(Part)
@@ -447,6 +394,15 @@ local function CountLuckyArrows()
         end
     end
     return count
+end
+
+-- ========== ДИНАМИЧЕСКАЯ ПАПКА ПРЕДМЕТОВ ==========
+local function GetItemsContainer()
+    local itemSpawns = workspace:FindFirstChild("Item_Spawns")
+    if itemSpawns then
+        return itemSpawns:FindFirstChild("Items")
+    end
+    return nil
 end
 
 -- ========== ОБНАРУЖЕНИЕ ПРЕДМЕТОВ (без лимитов) ==========
@@ -574,7 +530,7 @@ end)
 repeat task.wait() until GetCharacter() and GetCharacter("RemoteEvent")
 GetCharacter("RemoteEvent"):FireServer("PressedPlay")
 TeleportTo(CFrame.new(978, -42, -49))
-Log("Started farming at safe spot")
+Log("Started farming")
 task.wait(1)
 
 task.spawn(function()
@@ -615,7 +571,7 @@ end)
 
 task.wait(5)
 
--- ========== ОСНОВНОЙ ЦИКЛ ФАРМА (БЕЗ HasMaxItem) ==========
+-- ========== ОСНОВНОЙ ЦИКЛ ФАРМА (БЕЗ ЛИМИТОВ) ==========
 local function SellItemNow(itemName)
     if AutoSell and SellItems[itemName] then
         local tool = Player.Backpack:FindFirstChild(itemName)
@@ -645,7 +601,6 @@ while true do
     for Index, ItemInfo in pairs(getgenv().SpawnedItems) do
         local HumanoidRootPart = GetCharacter("HumanoidRootPart")
         if HumanoidRootPart then
-            -- Убираем проверку HasMaxItem — фармим ВСЕ предметы
             local ProximityPrompt = ItemInfo.ProximityPrompt
             local Position = ItemInfo.Position
             getgenv().SpawnedItems[Index] = nil
