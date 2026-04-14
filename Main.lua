@@ -15,12 +15,10 @@ local PlayerGui = Player:WaitForChild("PlayerGui")
 
 -- ========== СОЗДАНИЕ ПАПОК ДЛЯ ПРЕДМЕТОВ ==========
 if not workspace:FindFirstChild("Item_Spawns") then
-    local folder = Instance.new("Folder", workspace)
-    folder.Name = "Item_Spawns"
+    Instance.new("Folder", workspace).Name = "Item_Spawns"
 end
 if not workspace.Item_Spawns:FindFirstChild("Items") then
-    local folder = Instance.new("Folder", workspace.Item_Spawns)
-    folder.Name = "Items"
+    Instance.new("Folder", workspace.Item_Spawns).Name = "Items"
 end
 
 -- ========== HWID И КЛЮЧ ==========
@@ -63,17 +61,19 @@ local function LoadKeyInfo()
     end
     return nil
 end
+local function ClearKeyInfo() if isfile(KEY_INFO_FILE) then delfile(KEY_INFO_FILE) end end
+
 local function GetDaysLeft()
     local info = LoadKeyInfo()
     if not info then return 0 end
     local left = 30 - (os.time() - info.activated) / 86400
     return left > 0 and math.floor(left) or 0
 end
+
 local function IsKeyValid()
     local info = LoadKeyInfo()
     return info and (os.time() - info.activated) <= 30 * 86400
 end
-local function ClearKeyInfo() if isfile(KEY_INFO_FILE) then delfile(KEY_INFO_FILE) end end
 
 local function CheckKey()
     local inputKey = ""
@@ -167,7 +167,7 @@ local SellItems = {
     ["Steel Ball"] = true, ["Dio's Diary"] = true
 }
 
--- ========== GUI (простой, без лагов) ==========
+-- ========== GUI ==========
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SameHub"
 screenGui.Parent = CoreGui
@@ -430,7 +430,7 @@ task.spawn(function()
     end
 end)
 
--- ========== СЕРВЕР-ХОП (5 СЕКУНД БЕЗ ПРЕДМЕТОВ) ==========
+-- ========== СЕРВЕР-ХОП (взят из твоих файлов, улучшен) ==========
 local function ServerHop()
     local servers = {}
     local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
@@ -574,7 +574,7 @@ local function CountLuckyArrows()
 end
 
 while true do
-    -- Убираем HasMaxItem — собираем все предметы без проверки
+    -- Собираем ВСЕ предметы (без проверки HasMaxItem)
     for Index, ItemInfo in pairs(getgenv().SpawnedItems) do
         local hrp = GetCharacter("HumanoidRootPart")
         if hrp then
