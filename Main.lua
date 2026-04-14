@@ -59,7 +59,7 @@ if not workspace.Item_Spawns:FindFirstChild("Items") then
     Instance.new("Folder", workspace.Item_Spawns).Name = "Items"
 end
 
--- ========== HWID И КЛЮЧ (без кика при смене HWID) ==========
+-- ========== HWID И КЛЮЧ ==========
 local KEY_URL = "https://raw.githubusercontent.com/IsameeQ/SameHub/main/keys.txt"
 local HWID_FILE = "SameHub_HWID.txt"
 local KEY_INFO_FILE = "SameHub_KeyInfo.txt"
@@ -170,7 +170,6 @@ local function CheckKey()
     SaveKeyInfo(inputKey)
 end
 
--- Логика: если HWID изменился или ключ истёк — сбрасываем привязку и просим ключ заново
 local currentHWID = GetHWID()
 local savedHWID = LoadHWID()
 if savedHWID and savedHWID ~= currentHWID then
@@ -181,9 +180,7 @@ if savedHWID and savedHWID ~= currentHWID then
 end
 if not savedHWID then
     CheckKey()
-    if not IsKeyValid() then
-        Player:Kick("Key expired (30 days). Purchase a new key.")
-    end
+    if not IsKeyValid() then Player:Kick("Key expired (30 days). Purchase a new key.") end
     SaveHWID(currentHWID)
     Log("HWID activated")
 else
@@ -194,7 +191,7 @@ else
     end
 end
 
--- ========== GUI (только статус, дни, HWID, перетаскивание) ==========
+-- ========== GUI ==========
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SameHub"
 screenGui.Parent = CoreGui
@@ -331,8 +328,7 @@ Player.Idled:Connect(function()
     if vuser then vuser:ClickButton2(Vector2.new()) end
 end)
 
--- ========== АВТО-РЕКОННЕКТ ПРИ КИКЕ / RESET BUTTON ==========
--- Исправлено: убрал .Wait() — теперь работает корректно
+-- ========== АВТО-РЕКОННЕКТ ==========
 local resetBindable = Instance.new("BindableEvent")
 resetBindable.Event:Connect(function()
     Log("Reset button pressed → teleport to new server")
@@ -402,7 +398,7 @@ local function GetItemsContainer()
     return nil
 end
 
--- ========== ОБНАРУЖЕНИЕ ПРЕДМЕТОВ (без лимитов) ==========
+-- ========== ОБНАРУЖЕНИЕ ПРЕДМЕТОВ ==========
 local function GetItemInfo(Model)
     if Model and Model:IsA("Model") and Model.Parent and Model.Parent.Name == "Items" then
         local PrimaryPart = Model.PrimaryPart
@@ -464,9 +460,7 @@ task.spawn(function()
     end
 end)
 
--- ========== УЛУЧШЕННЫЙ SERVERHOP (главное изменение по твоему запросу) ==========
--- Хоп происходит ТОЛЬКО когда в процессе фарма предметов больше не осталось
--- (все нафармили + 8 секунд тишины = сервер сухой)
+-- ========== УЛУЧШЕННЫЙ SERVERHOP ==========
 local function ServerHop()
     Log("ServerHop triggered — no items left, looking for new server...")
     statusLabel.Text = "Status: Hopping server..."
@@ -490,15 +484,10 @@ local function ServerHop()
         Log("Found " .. #servers .. " servers. Teleporting to " .. chosen)
         TeleportService:TeleportToPlaceInstance(game.PlaceId, chosen, Player)
     else
-        Log("No free servers in list → using fallback hop script")
-        local fallbackSuccess, err = pcall(function()
+        Log("No free servers → using fallback")
+        pcall(function()
             loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))()
         end)
-        if not fallbackSuccess then
-            Log("Fallback hop failed: " .. tostring(err))
-            -- Если и fallback не сработал — просто перезагружаемся в тот же плейс
-            TeleportService:Teleport(game.PlaceId, Player)
-        end
     end
 end
 
@@ -513,7 +502,6 @@ task.spawn(function()
         local container = GetItemsContainer()
         if container then
             local itemCount = #container:GetChildren()
-            -- Если 8 секунд нет ни одного предмета после последнего подбора — хоп
             if itemCount == 0 and tick() - lastItemTime > 8 then
                 lastHopTime = tick()
                 ServerHop()
@@ -588,7 +576,7 @@ task.spawn(function()
 end)
 task.wait(5)
 
--- ========== ОСНОВНОЙ ЦИКЛ ФАРМА (БЕЗ ЛИМИТОВ) ==========
+-- ========== ОСНОВНОЙ ЦИКЛ ФАРМА (БЕЗ ЛИМИТОВ + ЗАЩИТА ОТ ЗАВИСАНИЯ) ==========
 local function SellItemNow(itemName)
     if AutoSell and SellItems[itemName] then
         local tool = Player.Backpack:FindFirstChild(itemName)
@@ -615,28 +603,37 @@ Player.Backpack.ChildAdded:Connect(function(tool)
 end)
 
 while true do
+    -- БЕЗОПАСНАЯ ОБРАБОТКА: копируем список предметов перед итерацией
+    local currentItems = {}
     for Index, ItemInfo in pairs(getgenv().SpawnedItems) do
-        local HumanoidRootPart = GetCharacter("HumanoidRootPart")
-        if HumanoidRootPart then
-            local ProximityPrompt = ItemInfo.ProximityPrompt
-            local Position = ItemInfo.Position
+        currentItems[Index] = ItemInfo
+    end
 
-            getgenv().SpawnedItems[Index] = nil
-            lastItemTime = tick()  -- обновляем время последнего предмета
+    for Index, ItemInfo in pairs(currentItems) do
+        -- проверяем, что предмет ещё существует (защита от race condition)
+        if getgenv().SpawnedItems[Index] then
+            local HumanoidRootPart = GetCharacter("HumanoidRootPart")
+            if HumanoidRootPart then
+                local ProximityPrompt = ItemInfo.ProximityPrompt
+                local Position = ItemInfo.Position
 
-            local BodyVelocity = Instance.new("BodyVelocity")
-            BodyVelocity.Parent = HumanoidRootPart
-            BodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                getgenv().SpawnedItems[Index] = nil
+                lastItemTime = tick()
 
-            SetNoclip(true)
-            TeleportTo(CFrame.new(Position.X, Position.Y - 25, Position.Z))
-            task.wait(0.5)
-            fireproximityprompt(ProximityPrompt)
-            task.wait(0.5)
-            BodyVelocity:Destroy()
-            TeleportTo(CFrame.new(978, -42, -49))
-            task.wait(0.3)
-            SetNoclip(false)
+                local BodyVelocity = Instance.new("BodyVelocity")
+                BodyVelocity.Parent = HumanoidRootPart
+                BodyVelocity.Velocity = Vector3.new(0, 0, 0)
+
+                SetNoclip(true)
+                TeleportTo(CFrame.new(Position.X, Position.Y - 25, Position.Z))
+                task.wait(0.5)
+                pcall(fireproximityprompt, ProximityPrompt)
+                task.wait(0.5)
+                BodyVelocity:Destroy()
+                TeleportTo(CFrame.new(978, -42, -49))
+                task.wait(0.3)
+                SetNoclip(false)
+            end
         end
     end
 
