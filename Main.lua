@@ -13,7 +13,42 @@ local UserInputService = game:GetService("UserInputService")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
--- ========== ПАПКИ ДЛЯ ПРЕДМЕТОВ ==========
+-- ========== ЛОГГЕР ==========
+local LOG_FILE = "SameHub_Log.txt"
+local function Log(msg)
+    local line = os.date("%Y-%m-%d %H:%M:%S") .. " " .. msg
+    pcall(function() writefile(LOG_FILE, (isfile(LOG_FILE) and readfile(LOG_FILE) or "") .. line .. "\n") end)
+    print(line)
+end
+
+-- ========== СОХРАНЕНИЕ НАСТРОЕК ==========
+local SETTINGS_FILE = "SameHub_Settings.json"
+local defaultSettings = { BuyLucky = true, AutoSell = true, SellItems = {
+    ["Gold Coin"] = true, ["Rokakaka"] = true, ["Pure Rokakaka"] = true,
+    ["Mysterious Arrow"] = true, ["Diamond"] = true, ["Ancient Scroll"] = true,
+    ["Caesar's Headband"] = true, ["Stone Mask"] = true,
+    ["Rib Cage of The Saint's Corpse"] = true, ["Quinton's Glove"] = true,
+    ["Zeppeli's Hat"] = true, ["Lucky Arrow"] = false, ["Clackers"] = true,
+    ["Steel Ball"] = true, ["Dio's Diary"] = true
+} }
+local Settings = {}
+local function LoadSettings()
+    if isfile(SETTINGS_FILE) then
+        local ok, data = pcall(HttpService.JSONDecode, HttpService, readfile(SETTINGS_FILE))
+        if ok then Settings = data else Settings = defaultSettings end
+    else
+        Settings = defaultSettings
+    end
+end
+local function SaveSettings()
+    pcall(function() writefile(SETTINGS_FILE, HttpService:JSONEncode(Settings)) end)
+end
+LoadSettings()
+local BuyLucky = Settings.BuyLucky
+local AutoSell = Settings.AutoSell
+local SellItems = Settings.SellItems
+
+-- ========== ПАПКИ ПРЕДМЕТОВ ==========
 if not workspace:FindFirstChild("Item_Spawns") then
     Instance.new("Folder", workspace).Name = "Item_Spawns"
 end
@@ -21,7 +56,7 @@ if not workspace.Item_Spawns:FindFirstChild("Items") then
     Instance.new("Folder", workspace.Item_Spawns).Name = "Items"
 end
 
--- ========== HWID И КЛЮЧ ==========
+-- ========== HWID И КЛЮЧ (без кика при несовпадении) ==========
 local KEY_URL = "https://raw.githubusercontent.com/IsameeQ/SameHub/main/keys.txt"
 local HWID_FILE = "SameHub_HWID.txt"
 local KEY_INFO_FILE = "SameHub_KeyInfo.txt"
@@ -132,13 +167,13 @@ local function CheckKey()
     SaveKeyInfo(inputKey)
 end
 
--- Логика: если HWID не совпадает или ключ истёк — просто удаляем старые данные и просим ключ заново
+-- Логика: если HWID изменился или ключ истёк — просто удаляем старые данные и просим ключ заново
 local currentHWID = GetHWID()
 local savedHWID = LoadHWID()
 local keyInfo = LoadKeyInfo()
 
 if savedHWID and savedHWID ~= currentHWID then
-    -- HWID изменился — сбрасываем привязку, чтобы пользователь мог ввести ключ заново
+    Log("HWID changed, resetting activation")
     ResetHWID()
     ClearKeyInfo()
     savedHWID = nil
@@ -150,6 +185,7 @@ if not savedHWID then
         Player:Kick("Key expired (30 days). Purchase a new key.")
     end
     SaveHWID(currentHWID)
+    Log("HWID activated for key")
 else
     if not IsKeyValid() then
         ResetHWID()
@@ -158,27 +194,15 @@ else
     end
 end
 
--- ========== НАСТРОЙКИ ==========
-local BuyLucky = true
-local AutoSell = true
-local SellItems = {
-    ["Gold Coin"] = true, ["Rokakaka"] = true, ["Pure Rokakaka"] = true,
-    ["Mysterious Arrow"] = true, ["Diamond"] = true, ["Ancient Scroll"] = true,
-    ["Caesar's Headband"] = true, ["Stone Mask"] = true,
-    ["Rib Cage of The Saint's Corpse"] = true, ["Quinton's Glove"] = true,
-    ["Zeppeli's Hat"] = true, ["Lucky Arrow"] = false, ["Clackers"] = true,
-    ["Steel Ball"] = true, ["Dio's Diary"] = true
-}
-
--- ========== GUI (минимальное, с отображением дней) ==========
+-- ========== GUI (перетаскиваемое) ==========
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SameHub"
 screenGui.Parent = CoreGui
 screenGui.ResetOnSpawn = false
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 260, 0, 280)
-mainFrame.Position = UDim2.new(0.02, 0, 0.5, -140)
+mainFrame.Size = UDim2.new(0, 260, 0, 310)
+mainFrame.Position = UDim2.new(0.02, 0, 0.5, -155)
 mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 mainFrame.BackgroundTransparency = 0.05
 mainFrame.BorderSizePixel = 0
@@ -276,7 +300,7 @@ task.spawn(function()
     end
 end)
 
--- ========== БАЙПАСЫ ==========
+-- ========== БАЙПАСЫ И АНТИ-AFK ==========
 pcall(function()
     local FunctionLibrary = require(ReplicatedStorage:WaitForChild("Modules").FunctionLibrary)
     local OldPcall = FunctionLibrary.pcall
@@ -314,16 +338,13 @@ oldNc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
         return "  ___XP DE KEY"
     end
     return oldNc(self, ...)
-end))
+end)
 
--- ========== ДИНАМИЧЕСКИЙ ПОИСК ПАПКИ С ПРЕДМЕТАМИ ==========
-local function GetItemsContainer()
-    local itemSpawns = workspace:FindFirstChild("Item_Spawns")
-    if itemSpawns then
-        return itemSpawns:FindFirstChild("Items")
-    end
-    return nil
-end
+-- Анти-AFK
+Player.Idled:Connect(function()
+    local vuser = game:GetService("VirtualUser")
+    if vuser then vuser:ClickButton2(Vector2.new()) end
+end)
 
 -- ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 local function GetCharacter(Part)
@@ -378,60 +399,14 @@ local function CountLuckyArrows()
     return count
 end
 
--- ========== СЕРВЕР-ХОП (10 СЕКУНД БЕЗ ПРЕДМЕТОВ) ==========
-local function ServerHop()
-    local servers = {}
-    local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
-    local data = HttpService:JSONDecode(res)
-    for _, v in pairs(data.data) do
-        if v.playing < v.maxPlayers and v.id ~= game.JobId then
-            table.insert(servers, v.id)
-        end
+-- ========== ДИНАМИЧЕСКИЙ ПОИСК ПАПКИ С ПРЕДМЕТАМИ ==========
+local function GetItemsContainer()
+    local itemSpawns = workspace:FindFirstChild("Item_Spawns")
+    if itemSpawns then
+        return itemSpawns:FindFirstChild("Items")
     end
-    if #servers > 0 then
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)])
-    else
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))()
-    end
+    return nil
 end
-
-local lastHopTime = 0
-task.spawn(function()
-    local noItemTimer = 0
-    local checkInterval = 2
-    local maxEmptyTime = 10
-    while true do
-        task.wait(checkInterval)
-        if tick() - lastHopTime < 20 then continue end
-        local container = GetItemsContainer()
-        if container then
-            local itemCount = #container:GetChildren()
-            if itemCount == 0 then
-                noItemTimer = noItemTimer + checkInterval
-                if noItemTimer >= maxEmptyTime then
-                    statusLabel.Text = "Status: No items, hopping"
-                    lastHopTime = tick()
-                    ServerHop()
-                    task.wait(10)
-                    noItemTimer = 0
-                    statusLabel.Text = "Status: Farming"
-                end
-            else
-                noItemTimer = 0
-            end
-        else
-            noItemTimer = noItemTimer + checkInterval
-            if noItemTimer >= maxEmptyTime then
-                statusLabel.Text = "Status: Items folder missing, hopping"
-                lastHopTime = tick()
-                ServerHop()
-                task.wait(10)
-                noItemTimer = 0
-                statusLabel.Text = "Status: Farming"
-            end
-        end
-    end
-end)
 
 -- ========== ОБНАРУЖЕНИЕ ПРЕДМЕТОВ ==========
 local function GetItemInfo(Model)
@@ -469,8 +444,6 @@ local function RefreshItemList()
     end
 end
 
-RefreshItemList()
-
 local function OnItemAdded(Model)
     task.wait(0.5)
     local info = GetItemInfo(Model)
@@ -493,23 +466,82 @@ end)
 task.spawn(function()
     while true do
         RefreshItemList()
-        task.wait(10)
+        task.wait(5)
     end
 end)
 
--- ========== СКИП GUI И ЗАГРУЗКИ (минимальный, чтобы не ломать игру) ==========
-task.wait(1)
-if not PlayerGui:FindFirstChild("HUD") then
-    local HUD = ReplicatedStorage.Objects.HUD:Clone()
-    HUD.Parent = PlayerGui
+-- ========== СЕРВЕР-ХОП (5 СЕКУНД БЕЗ ПРЕДМЕТОВ) ==========
+local function ServerHop()
+    local servers = {}
+    local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
+    local data = HttpService:JSONDecode(res)
+    for _, v in pairs(data.data) do
+        if v.playing < v.maxPlayers and v.id ~= game.JobId then
+            table.insert(servers, v.id)
+        end
+    end
+    if #servers > 0 then
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)])
+    else
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/rinqedd/pub_rblx/main/ServerHop", true))()
+    end
 end
 
--- Не удаляем экраны принудительно, только если они висят слишком долго (но лучше не трогать)
--- Вместо этого просто ждём появления HUD и RemoteEvent
+local lastHopTime = 0
+local lastItemTime = tick()
+task.spawn(function()
+    while true do
+        task.wait(2)
+        if tick() - lastHopTime < 15 then continue end
+        local container = GetItemsContainer()
+        if container then
+            local itemCount = #container:GetChildren()
+            if itemCount == 0 and tick() - lastItemTime > 5 then
+                statusLabel.Text = "Status: No items, hopping"
+                Log("No items for 5 sec, hopping")
+                lastHopTime = tick()
+                ServerHop()
+                task.wait(10)
+                lastItemTime = tick()
+                statusLabel.Text = "Status: Farming"
+            end
+        else
+            if tick() - lastItemTime > 5 then
+                statusLabel.Text = "Status: Items folder missing, hopping"
+                Log("Items folder missing, hopping")
+                lastHopTime = tick()
+                ServerHop()
+                task.wait(10)
+                lastItemTime = tick()
+                statusLabel.Text = "Status: Farming"
+            end
+        end
+    end
+end)
 
+-- ========== АВТО-РЕКОННЕКТ ПРИ КИКЕ ==========
+local function ReconnectOnKick()
+    local bindable = Instance.new("BindableEvent")
+    bindable.Event:Wait()
+    TeleportService:Teleport(2809202155, Player)
+end
+game:GetService("StarterGui"):SetCore("ResetButtonCallback", bindable)
+
+-- ========== СКИП GUI (мягкий, после загрузки) ==========
+task.wait(3)
+pcall(function()
+    for _, name in pairs({"LoadingScreen","LoadingScreen1","TeleportGui","IntroGui"}) do
+        local s = PlayerGui:FindFirstChild(name)
+        if s then s:Destroy() end
+    end
+    if workspace:FindFirstChild("LoadingScreen") then workspace.LoadingScreen:Destroy() end
+end)
+
+-- ========== ЗАПУСК ФАРМА ==========
 repeat task.wait() until GetCharacter() and GetCharacter("RemoteEvent")
 GetCharacter("RemoteEvent"):FireServer("PressedPlay")
 TeleportTo(CFrame.new(978, -42, -49))
+Log("Started farming at safe spot")
 task.wait(1)
 
 task.spawn(function()
@@ -518,6 +550,7 @@ task.spawn(function()
         pcall(function()
             if Char and Char:FindFirstChild("HumanoidRootPart") then
                 Char.HumanoidRootPart.CFrame = CFrame.new(978, -42, -49)
+                Log("Respawned to safe spot")
             end
         end)
     end)
@@ -549,7 +582,7 @@ end)
 
 task.wait(5)
 
--- ========== ОСНОВНОЙ ЦИКЛ ФАРМА (БЕЗ ЛИМИТОВ) ==========
+-- ========== ОСНОВНОЙ ЦИКЛ ФАРМА ==========
 local function SellItemNow(itemName)
     if AutoSell and SellItems[itemName] then
         local tool = Player.Backpack:FindFirstChild(itemName)
@@ -582,6 +615,7 @@ while true do
             local ProximityPrompt = ItemInfo.ProximityPrompt
             local Position = ItemInfo.Position
             getgenv().SpawnedItems[Index] = nil
+            lastItemTime = tick()
             local BodyVelocity = Instance.new("BodyVelocity")
             BodyVelocity.Parent = HumanoidRootPart
             BodyVelocity.Velocity = Vector3.new(0, 0, 0)
