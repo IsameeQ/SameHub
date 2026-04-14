@@ -13,21 +13,18 @@ local UserInputService = game:GetService("UserInputService")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
--- ========== СОЗДАНИЕ ПАПОК ДЛЯ ПРЕДМЕТОВ ==========
+-- ========== ПАПКИ ДЛЯ ПРЕДМЕТОВ ==========
 if not workspace:FindFirstChild("Item_Spawns") then
-    local folder = Instance.new("Folder", workspace)
-    folder.Name = "Item_Spawns"
+    Instance.new("Folder", workspace).Name = "Item_Spawns"
 end
 if not workspace.Item_Spawns:FindFirstChild("Items") then
-    local folder = Instance.new("Folder", workspace.Item_Spawns)
-    folder.Name = "Items"
+    Instance.new("Folder", workspace.Item_Spawns).Name = "Items"
 end
 
--- ========== HWID И КЛЮЧ (без изменений) ==========
+-- ========== HWID И КЛЮЧ ==========
 local KEY_URL = "https://raw.githubusercontent.com/IsameeQ/SameHub/main/keys.txt"
 local HWID_FILE = "SameHub_HWID.txt"
 local KEY_INFO_FILE = "SameHub_KeyInfo.txt"
-local RESET_LOG_FILE = "SameHub_ResetLog.txt"
 
 local function GetHWID()
     local executor = identifyexecutor and identifyexecutor() or "Unknown"
@@ -46,12 +43,6 @@ end
 local function SaveHWID(hwid) writefile(HWID_FILE, hwid) end
 local function LoadHWID() return isfile(HWID_FILE) and readfile(HWID_FILE) or nil end
 local function ResetHWID() if isfile(HWID_FILE) then delfile(HWID_FILE) end end
-local function CanResetHWID()
-    if not isfile(RESET_LOG_FILE) then return true end
-    local lastReset = tonumber(readfile(RESET_LOG_FILE))
-    return not lastReset or (os.time() - lastReset) >= 86400
-end
-local function LogReset() writefile(RESET_LOG_FILE, tostring(os.time())) end
 
 local function SaveKeyInfo(key)
     writefile(KEY_INFO_FILE, HttpService:JSONEncode({ key = key, activated = os.time() }))
@@ -63,18 +54,20 @@ local function LoadKeyInfo()
     end
     return nil
 end
+local function ClearKeyInfo() if isfile(KEY_INFO_FILE) then delfile(KEY_INFO_FILE) end end
+
+local function IsKeyValid()
+    local info = LoadKeyInfo()
+    if not info then return false end
+    return (os.time() - info.activated) <= 30 * 86400
+end
+
 local function GetDaysLeft()
     local info = LoadKeyInfo()
     if not info then return 0 end
-    local daysPassed = (os.time() - info.activated) / 86400
-    local left = 30 - daysPassed
+    local left = 30 - (os.time() - info.activated) / 86400
     return left > 0 and math.floor(left) or 0
 end
-local function IsKeyValid()
-    local info = LoadKeyInfo()
-    return info and (os.time() - info.activated) <= 30 * 86400
-end
-local function ClearKeyInfo() if isfile(KEY_INFO_FILE) then delfile(KEY_INFO_FILE) end end
 
 local function CheckKey()
     local inputKey = ""
@@ -139,14 +132,23 @@ local function CheckKey()
     SaveKeyInfo(inputKey)
 end
 
+-- Логика: если HWID не совпадает или ключ истёк — просто удаляем старые данные и просим ключ заново
 local currentHWID = GetHWID()
 local savedHWID = LoadHWID()
+local keyInfo = LoadKeyInfo()
 
 if savedHWID and savedHWID ~= currentHWID then
-    Player:Kick("HWID mismatch!")
-elseif not savedHWID then
+    -- HWID изменился — сбрасываем привязку, чтобы пользователь мог ввести ключ заново
+    ResetHWID()
+    ClearKeyInfo()
+    savedHWID = nil
+end
+
+if not savedHWID then
     CheckKey()
-    if not IsKeyValid() then Player:Kick("Key expired (30 days). Purchase a new key.") end
+    if not IsKeyValid() then
+        Player:Kick("Key expired (30 days). Purchase a new key.")
+    end
     SaveHWID(currentHWID)
 else
     if not IsKeyValid() then
@@ -168,15 +170,15 @@ local SellItems = {
     ["Steel Ball"] = true, ["Dio's Diary"] = true
 }
 
--- ========== GUI (перетаскиваемое, с днями подписки) ==========
+-- ========== GUI (минимальное, с отображением дней) ==========
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SameHub"
 screenGui.Parent = CoreGui
 screenGui.ResetOnSpawn = false
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 260, 0, 310)
-mainFrame.Position = UDim2.new(0.02, 0, 0.5, -155)
+mainFrame.Size = UDim2.new(0, 260, 0, 280)
+mainFrame.Position = UDim2.new(0.02, 0, 0.5, -140)
 mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 mainFrame.BackgroundTransparency = 0.05
 mainFrame.BorderSizePixel = 0
@@ -194,11 +196,8 @@ titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 18
 titleLabel.Parent = mainFrame
 
--- Перетаскивание окна
 local dragging = false
-local dragStart
-local frameStart
-
+local dragStart, frameStart
 titleLabel.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         dragging = true
@@ -209,7 +208,6 @@ titleLabel.InputBegan:Connect(function(input)
         end)
     end
 end)
-
 UserInputService.InputChanged:Connect(function(input)
     if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
         local delta = input.Position - dragStart
@@ -261,28 +259,6 @@ hwidLabel.TextSize = 11
 hwidLabel.TextXAlignment = Enum.TextXAlignment.Left
 hwidLabel.Parent = mainFrame
 
-local resetButton = Instance.new("TextButton")
-resetButton.Size = UDim2.new(0.8, 0, 0, 30)
-resetButton.Position = UDim2.new(0.1, 0, 0, 170)
-resetButton.Text = "Reset HWID"
-resetButton.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-resetButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-resetButton.Font = Enum.Font.GothamBold
-resetButton.TextSize = 13
-resetButton.Parent = mainFrame
-resetButton.MouseButton1Click:Connect(function()
-    if not CanResetHWID() then
-        statusLabel.Text = "Status: Reset only once per 24h"
-        task.wait(2)
-        statusLabel.Text = "Status: Farming"
-        return
-    end
-    ResetHWID()
-    ClearKeyInfo()
-    LogReset()
-    Player:Kick("HWID reset. Restart script with a key.")
-end)
-
 local function UpdateGUI()
     pcall(function()
         local count = 0
@@ -323,13 +299,10 @@ CoreGui.DescendantAdded:Connect(function(child)
 end)
 
 local Has2x = MarketplaceService:UserOwnsGamePassAsync(Player.UserId, 14597778)
-
 pcall(function()
     oldMagnitude = hookmetamethod(Vector3.new(), "__index", newcclosure(function(self, index)
         local CallingScript = tostring(getcallingscript())
-        if not checkcaller() and index == "magnitude" and CallingScript == "ItemSpawn" then
-            return 0
-        end
+        if not checkcaller() and index == "magnitude" and CallingScript == "ItemSpawn" then return 0 end
         return oldMagnitude(self, index)
     end))
 end)
@@ -343,7 +316,7 @@ oldNc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     return oldNc(self, ...)
 end))
 
--- ========== ПАПКА ПРЕДМЕТОВ (БУДЕТ ИСКАТЬСЯ ЗАНОВО ПРИ КАЖДОЙ ПРОВЕРКЕ) ==========
+-- ========== ДИНАМИЧЕСКИЙ ПОИСК ПАПКИ С ПРЕДМЕТАМИ ==========
 local function GetItemsContainer()
     local itemSpawns = workspace:FindFirstChild("Item_Spawns")
     if itemSpawns then
@@ -370,21 +343,25 @@ end
 
 local noclipActive = false
 RunService.Stepped:Connect(function()
-    if not noclipActive then return end
-    local Char = GetCharacter()
-    if not Char then return end
-    for _, Child in pairs(Char:GetDescendants()) do
-        if Child:IsA("BasePart") then Child.CanCollide = false end
+    if noclipActive then
+        local Char = GetCharacter()
+        if Char then
+            for _, Child in pairs(Char:GetDescendants()) do
+                if Child:IsA("BasePart") then Child.CanCollide = false end
+            end
+        end
     end
 end)
 
 local function SetNoclip(Value)
     noclipActive = Value
-    if Value then return end
-    local Char = GetCharacter()
-    if not Char then return end
-    for _, Child in pairs(Char:GetDescendants()) do
-        if Child:IsA("BasePart") then Child.CanCollide = true end
+    if not Value then
+        local Char = GetCharacter()
+        if Char then
+            for _, Child in pairs(Char:GetDescendants()) do
+                if Child:IsA("BasePart") then Child.CanCollide = true end
+            end
+        end
     end
 end
 
@@ -401,7 +378,7 @@ local function CountLuckyArrows()
     return count
 end
 
--- ========== СЕРВЕР-ХОП (ИСПРАВЛЕННЫЙ) ==========
+-- ========== СЕРВЕР-ХОП (10 СЕКУНД БЕЗ ПРЕДМЕТОВ) ==========
 local function ServerHop()
     local servers = {}
     local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100")
@@ -418,21 +395,17 @@ local function ServerHop()
     end
 end
 
--- Мониторинг предметов (с защитой от частых хопов и динамическим поиском папки)
 local lastHopTime = 0
 task.spawn(function()
     local noItemTimer = 0
-    local checkInterval = 1
-    local maxEmptyTime = 10   -- 10 секунд без предметов (вместо 3, чтобы не хопать на пустых серверах)
+    local checkInterval = 2
+    local maxEmptyTime = 10
     while true do
         task.wait(checkInterval)
-        -- Не хопать слишком часто
-        if tick() - lastHopTime < 20 then
-            continue
-        end
-        local itemsContainer = GetItemsContainer()
-        if itemsContainer then
-            local itemCount = #itemsContainer:GetChildren()
+        if tick() - lastHopTime < 20 then continue end
+        local container = GetItemsContainer()
+        if container then
+            local itemCount = #container:GetChildren()
             if itemCount == 0 then
                 noItemTimer = noItemTimer + checkInterval
                 if noItemTimer >= maxEmptyTime then
@@ -447,7 +420,6 @@ task.spawn(function()
                 noItemTimer = 0
             end
         else
-            -- Папка не найдена — считаем как отсутствие предметов
             noItemTimer = noItemTimer + checkInterval
             if noItemTimer >= maxEmptyTime then
                 statusLabel.Text = "Status: Items folder missing, hopping"
@@ -461,7 +433,7 @@ task.spawn(function()
     end
 end)
 
--- ========== ОБНАРУЖЕНИЕ ПРЕДМЕТОВ (с динамической папкой) ==========
+-- ========== ОБНАРУЖЕНИЕ ПРЕДМЕТОВ ==========
 local function GetItemInfo(Model)
     if Model and Model:IsA("Model") and Model.Parent and Model.Parent.Name == "Items" then
         local PrimaryPart = Model.PrimaryPart
@@ -497,21 +469,16 @@ local function RefreshItemList()
     end
 end
 
--- Первоначальное сканирование
 RefreshItemList()
 
--- Отслеживание новых предметов
 local function OnItemAdded(Model)
     task.wait(0.5)
-    if Model:IsA("Model") then
-        local info = GetItemInfo(Model)
-        if info then
-            getgenv().SpawnedItems[Model] = info
-        end
+    local info = GetItemInfo(Model)
+    if info then
+        getgenv().SpawnedItems[Model] = info
     end
 end
 
--- Наблюдаем за папкой (если она появится)
 task.spawn(function()
     while true do
         local container = GetItemsContainer()
@@ -523,7 +490,6 @@ task.spawn(function()
     end
 end)
 
--- Периодическое обновление списка
 task.spawn(function()
     while true do
         RefreshItemList()
@@ -531,30 +497,15 @@ task.spawn(function()
     end
 end)
 
--- ========== СКИП GUI И ЗАГРУЗКИ ==========
+-- ========== СКИП GUI И ЗАГРУЗКИ (минимальный, чтобы не ломать игру) ==========
 task.wait(1)
 if not PlayerGui:FindFirstChild("HUD") then
     local HUD = ReplicatedStorage.Objects.HUD:Clone()
     HUD.Parent = PlayerGui
 end
 
-task.spawn(function()
-    while task.wait(0.5) do
-        pcall(function()
-            local screens = {"LoadingScreen", "LoadingScreen1", "TeleportGui", "IntroGui"}
-            for _, name in pairs(screens) do
-                local screen = PlayerGui:FindFirstChild(name)
-                if screen then screen:Destroy() end
-            end
-            if workspace:FindFirstChild("LoadingScreen") then
-                workspace.LoadingScreen:Destroy()
-            end
-            if workspace:FindFirstChild("LoadingScreen") and workspace.LoadingScreen:FindFirstChild("Song") then
-                workspace.LoadingScreen.Song:Destroy()
-            end
-        end)
-    end
-end)
+-- Не удаляем экраны принудительно, только если они висят слишком долго (но лучше не трогать)
+-- Вместо этого просто ждём появления HUD и RemoteEvent
 
 repeat task.wait() until GetCharacter() and GetCharacter("RemoteEvent")
 GetCharacter("RemoteEvent"):FireServer("PressedPlay")
@@ -625,7 +576,6 @@ Player.Backpack.ChildAdded:Connect(function(tool)
 end)
 
 while true do
-    -- Собираем ВСЕ предметы из списка (без проверки HasMaxItem)
     for Index, ItemInfo in pairs(getgenv().SpawnedItems) do
         local HumanoidRootPart = GetCharacter("HumanoidRootPart")
         if HumanoidRootPart then
@@ -649,7 +599,6 @@ while true do
 
     task.wait(3)
 
-    -- Автоселл оставшихся предметов
     if AutoSell then
         for Item, Sell in pairs(SellItems) do
             if Sell and Player.Backpack and Player.Backpack:FindFirstChild(Item) then
@@ -664,7 +613,6 @@ while true do
         end
     end
 
-    -- Покупка Lucky Arrows
     local Money = Player.PlayerStats.Money
     if BuyLucky and CountLuckyArrows() < 10 then
         local attempts = 0
